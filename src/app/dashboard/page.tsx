@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { headers } from "next/headers"
 import StatsCards from "@/components/dashboard/StatsCards"
 import Charts from "@/components/dashboard/Charts"
 import AIInsights from "@/components/dashboard/AIInsights"
@@ -7,8 +8,13 @@ import AIInsights from "@/components/dashboard/AIInsights"
 async function getAnalytics() {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
   try {
+    // Get cookies from the request headers and pass them to the API
+    const headersList = await headers()
+    const cookie = headersList.get("cookie")
+
     const response = await fetch(`${baseUrl}/api/analytics?days=30`, {
-      cache: "no-store"
+      cache: "no-store",
+      headers: cookie ? { cookie } : {}
     })
 
     if (!response.ok) {

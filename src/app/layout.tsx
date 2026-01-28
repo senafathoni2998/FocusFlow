@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
 import { auth } from "@/lib/auth";
+import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
   title: "FocusFlow - Productivity Dashboard",
@@ -13,13 +14,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await auth();
-
   return (
     <html lang="en">
-      <body className="antialiased">
-        {session?.user && <Navigation userEmail={session.user.email} />}
-        {children}
+      <body className="antialiased" suppressHydrationWarning>
+        <Providers>
+          <Navigation />
+          {children}
+        </Providers>
       </body>
     </html>
   );

@@ -1,16 +1,15 @@
 import OpenAI from 'openai'
 
-// Z.AI (智谱AI) provides OpenAI-compatible API
-// Documentation: https://docs.z.ai/guides/overview/quick-start
-const zai = new OpenAI({
-  apiKey: process.env.ZAI_API_KEY || "",
-  baseURL: "https://open.bigmodel.cn/api/paas/v4/"
+// Using Groq for fast, free AI inference
+const openai = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY || "",
+  baseURL: "https://api.groq.com/openai/v1"
 })
 
 export async function generateInsights(userSessions: any[], userTasks: any[]) {
-  if (!process.env.ZAI_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     return {
-      error: "Z.AI API key not configured",
+      error: "Groq API key not configured",
       insights: getDefaultInsights(userSessions, userTasks)
     }
   }
@@ -49,9 +48,9 @@ Pending tasks: ${JSON.stringify(userTasks.filter((t) => t.status !== "completed"
 
 Provide 3-5 specific, actionable recommendations to improve productivity.`
 
-    // Using GLM-4-Flash model (faster and more cost-effective)
-    const response = await zai.chat.completions.create({
-      model: "glm-4-flash",
+    // Using Llama 3.1 8B on Groq - extremely fast and free
+    const response = await openai.chat.completions.create({
+      model: "llama-3.1-8b-instant",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -73,7 +72,7 @@ Provide 3-5 specific, actionable recommendations to improve productivity.`
       insights: bulletPoints.length > 0 ? bulletPoints : getDefaultInsights(userSessions, userTasks)
     }
   } catch (error) {
-    console.error("Z.AI API error:", error)
+    console.error("Groq API error:", error)
     return {
       error: "Failed to generate AI insights",
       insights: getDefaultInsights(userSessions, userTasks)

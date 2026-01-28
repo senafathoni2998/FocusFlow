@@ -2,11 +2,29 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { signOut, useSession } from "next-auth/react"
 
-export default function Navigation({ userEmail }: { userEmail?: string }) {
+export default function Navigation() {
   const pathname = usePathname()
+  const { data: session, status } = useSession()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Don't render anything until mounted
+  if (!mounted || status === "loading") {
+    return null
+  }
+
+  // Don't render if not authenticated
+  if (status !== "authenticated" || !session?.user) {
+    return null
+  }
 
   const navLinks = [
     { href: "/dashboard", label: "Dashboard", icon: "📊" },
@@ -15,6 +33,10 @@ export default function Navigation({ userEmail }: { userEmail?: string }) {
   ]
 
   const isActive = (href: string) => pathname === href
+
+  const handleSignOut = async () => {
+    await signOut({ callbackUrl: "/auth/signin" })
+  }
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
@@ -46,14 +68,12 @@ export default function Navigation({ userEmail }: { userEmail?: string }) {
             ))}
 
             <div className="ml-4 pl-4 border-l border-gray-200">
-              <form action="/api/auth/signout" method="POST">
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-                >
-                  Sign Out
-                </button>
-              </form>
+              <button
+                onClick={handleSignOut}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              >
+                Sign Out
+              </button>
             </div>
           </div>
 
@@ -100,14 +120,15 @@ export default function Navigation({ userEmail }: { userEmail?: string }) {
               </Link>
             ))}
             <div className="pt-2 border-t border-gray-200">
-              <form action="/api/auth/signout" method="POST">
-                <button
-                  type="submit"
-                  className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-                >
-                  Sign Out
-                </button>
-              </form>
+              <button
+                onClick={() => {
+                  handleSignOut()
+                  setMobileMenuOpen(false)
+                }}
+                className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              >
+                Sign Out
+              </button>
             </div>
           </div>
         </div>
