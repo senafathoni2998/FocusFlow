@@ -105,8 +105,11 @@ export async function deleteTask(id: string) {
   const session = await auth()
 
   if (!session?.user?.id) {
+    console.log("[deleteTask] Unauthorized - no session")
     return { error: "Unauthorized" }
   }
+
+  console.log("[deleteTask] Attempting to delete task:", id, "for user:", session.user.id)
 
   try {
     // Verify task ownership
@@ -114,7 +117,10 @@ export async function deleteTask(id: string) {
       where: { id, userId: session.user.id }
     })
 
+    console.log("[deleteTask] Found task:", existingTask?.id, existingTask?.title)
+
     if (!existingTask) {
+      console.log("[deleteTask] Task not found")
       return { error: "Task not found" }
     }
 
@@ -122,25 +128,35 @@ export async function deleteTask(id: string) {
       where: { id }
     })
 
+    console.log("[deleteTask] Task deleted successfully")
+
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
 
     return { success: true }
   } catch (error) {
+    console.error("[deleteTask] Error:", error)
     return { error: "Failed to delete task" }
   }
 }
 
-export async function getTasks() {
-  const session = await auth()
+export async function getTasks(userId?: string) {
+  // If userId is provided, use it directly (for API routes)
+  // Otherwise, get session (for Server Actions)
+  let targetUserId = userId
 
-  if (!session?.user?.id) {
+  if (!targetUserId) {
+    const session = await auth()
+    targetUserId = session?.user?.id
+  }
+
+  if (!targetUserId) {
     return []
   }
 
   try {
     const tasks = await prisma.task.findMany({
-      where: { userId: session.user.id },
+      where: { userId: targetUserId },
       orderBy: { createdAt: "desc" }
     })
 

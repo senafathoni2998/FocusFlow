@@ -1,8 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import TaskCard from "./TaskCard"
 import CreateTaskForm from "./CreateTaskForm"
+import { useTaskUpdates } from "@/hooks/useTaskUpdates"
 
 interface Task {
   id: string
@@ -19,9 +21,21 @@ interface TaskBoardProps {
 }
 
 export default function TaskBoard({ tasks, onUpdate }: TaskBoardProps) {
+  const router = useRouter()
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [filter, setFilter] = useState<"all" | "todo" | "in-progress" | "completed">("all")
   const [priorityFilter, setPriorityFilter] = useState<"all" | "low" | "medium" | "high">("all")
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  // Listen for task updates from AI assistant
+  useTaskUpdates(() => {
+    // Trigger a refresh when tasks are updated
+    setIsRefreshing(true)
+    router.refresh()
+
+    // Reset refreshing state after a short delay
+    setTimeout(() => setIsRefreshing(false), 500)
+  }, [router])
 
   const filteredTasks = tasks.filter((task) => {
     if (filter !== "all" && task.status !== filter) return false
@@ -39,9 +53,20 @@ export default function TaskBoard({ tasks, onUpdate }: TaskBoardProps) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
-          <p className="text-gray-600 mt-1">Manage and track your tasks</p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
+            <p className="text-gray-600 mt-1">Manage and track your tasks</p>
+          </div>
+          {isRefreshing && (
+            <div className="flex items-center gap-2 text-sm text-primary-600 animate-pulse">
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Updating...
+            </div>
+          )}
         </div>
 
         <button

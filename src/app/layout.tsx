@@ -3,6 +3,7 @@ import "./globals.css";
 import Navigation from "@/components/Navigation";
 import { auth } from "@/lib/auth";
 import Providers from "@/components/Providers";
+import ChatWidget from "@/components/chat/ChatWidget";
 
 export const metadata: Metadata = {
   title: "FocusFlow - Productivity Dashboard",
@@ -20,6 +21,7 @@ export default async function RootLayout({
         <Providers>
           <Navigation />
           {children}
+          <ChatWidget />
         </Providers>
       </body>
     </html>
