@@ -10,6 +10,7 @@ interface CreateTaskFormProps {
 export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
+  const [notes, setNotes] = useState("")
   const [priority, setPriority] = useState("medium")
   const [dueDate, setDueDate] = useState("")
   const [error, setError] = useState("")
@@ -20,7 +21,7 @@ export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
     setError("")
     setLoading(true)
 
-    const result = await createTask({ title, description, priority, dueDate })
+    const result = await createTask({ title, description, notes, priority, dueDate })
 
     if (result.error) {
       setError(result.error)
@@ -28,6 +29,7 @@ export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
     } else {
       setTitle("")
       setDescription("")
+      setNotes("")
       setPriority("medium")
       setDueDate("")
       setLoading(false)
@@ -69,6 +71,20 @@ export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
           rows={3}
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition resize-none text-gray-700 placeholder:text-gray-400"
           placeholder="Task description (optional)"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-2">
+          Notes <span className="text-gray-400 font-normal">(supports Markdown)</span>
+        </label>
+        <textarea
+          id="notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={4}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition resize-none text-gray-700 placeholder:text-gray-400 font-mono text-sm"
+          placeholder="- Add bullet points&#10;- **Bold** and *italic* text&#10;- # Headers&#10;- Links: [text](url)"
         />
       </div>
 

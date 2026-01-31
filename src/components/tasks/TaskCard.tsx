@@ -2,12 +2,14 @@
 
 import { useState } from "react"
 import { updateTask, deleteTask } from "@/app/actions/tasks"
+import TaskNotes from "./TaskNotes"
 
 interface TaskCardProps {
   task: {
     id: string
     title: string
     description?: string | null
+    notes?: string | null
     status: string
     priority: string
     dueDate?: Date | null
@@ -72,8 +74,10 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
       </div>
 
       {task.description && (
-        <p className="text-gray-600 text-sm mb-3">{task.description}</p>
+        <p className="text-gray-600 text-sm mb-2">{task.description}</p>
       )}
+
+      <TaskNotes notes={task.notes ?? null} />
 
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
