@@ -15,13 +15,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth()
+
   return (
     <html lang="en">
       <body className="antialiased" suppressHydrationWarning>
         <Providers>
           <Navigation />
           {children}
-          <ChatWidget />
+          {session?.user && <ChatWidget />}
         </Providers>
       </body>
     </html>
