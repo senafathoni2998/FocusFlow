@@ -26,6 +26,7 @@ model Task {
   status      String   @default("todo") // todo, in-progress, completed
   priority    String   @default("medium") // low, medium, high
   dueDate     DateTime?
+  order       Int      @default(0)
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())

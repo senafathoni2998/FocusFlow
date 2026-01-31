@@ -157,11 +157,51 @@ export async function getTasks(userId?: string) {
   try {
     const tasks = await prisma.task.findMany({
       where: { userId: targetUserId },
-      orderBy: { createdAt: "desc" }
+      orderBy: [{ order: "asc" }, { createdAt: "desc" }]
     })
 
     return tasks
   } catch (error) {
     return []
+  }
+}
+
+export async function reorderTask(data: {
+  id: string
+  newStatus: string
+  newOrder: number
+}) {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { error: "Unauthorized" }
+  }
+
+  try {
+    // Verify task ownership
+    const existingTask = await prisma.task.findFirst({
+      where: { id: data.id, userId: session.user.id }
+    })
+
+    if (!existingTask) {
+      return { error: "Task not found" }
+    }
+
+    // Update the task with new status and order
+    const task = await prisma.task.update({
+      where: { id: data.id },
+      data: {
+        status: data.newStatus,
+        order: data.newOrder
+      }
+    })
+
+    revalidatePath("/tasks")
+    revalidatePath("/dashboard")
+
+    return { success: true, task }
+  } catch (error) {
+    console.error("[reorderTask] Error:", error)
+    return { error: "Failed to reorder task" }
   }
 }
