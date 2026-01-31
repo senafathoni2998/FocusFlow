@@ -1,4 +1,14 @@
-export default function Home() {
+import { auth } from "@/lib/auth"
+import { redirect } from "next/navigation"
+
+export default async function Home() {
+  const session = await auth()
+
+  // Redirect to dashboard if already logged in
+  if (session?.user) {
+    redirect("/dashboard")
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24">
       <div className="z-10 max-w-5xl w-full items-center justify-center font-mono text-sm">
