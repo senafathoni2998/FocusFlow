@@ -18,7 +18,7 @@ const ChatWidget: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load suggestions on mount
   useEffect(() => {
@@ -36,6 +36,14 @@ const ChatWidget: React.FC = () => {
       inputRef.current.focus();
     }
   }, [isOpen]);
+
+  // Auto-resize textarea based on content
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 128)}px`;
+    }
+  }, [inputValue]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -148,7 +156,7 @@ const ChatWidget: React.FC = () => {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -262,17 +270,22 @@ const ChatWidget: React.FC = () => {
           </div>
 
           {/* Input */}
-          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex gap-2">
-              <input
+          <div className="px-4 py-3 border-t border-gray-200">
+            <div className="flex gap-2 items-center">
+              <textarea
                 ref={inputRef}
-                type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Type a message..."
                 disabled={isLoading}
-                className="flex-1 px-4 py-2 bg-gray-100 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent text-sm text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                rows={1}
+                className="flex-1 px-4  bg-gray-100 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-transparent text-sm text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-y-auto"
+                style={{
+                  paddingBlock: "0.4rem",
+                  minHeight: "40px",
+                  maxHeight: "128px",
+                }}
               />
               <button
                 onClick={() => handleSendMessage()}

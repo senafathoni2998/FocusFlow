@@ -28,7 +28,7 @@ const functions = [
         },
         description: {
           type: "string",
-          description: "Optional detailed description of the task",
+          description: "Optional detailed description of the task. IMPORTANT: Preserve all markdown formatting including bullet points (-), lists, headers (#), etc. Copy the description exactly as provided by the user without converting to plain text.",
         },
         priority: {
           type: "string",
@@ -59,7 +59,7 @@ const functions = [
         },
         description: {
           type: "string",
-          description: "New description for the task",
+          description: "New description for the task. IMPORTANT: Preserve all markdown formatting including bullet points (-), lists, headers (#), etc.",
         },
         status: {
           type: "string",
@@ -112,10 +112,36 @@ const systemPrompt = `You are a helpful task management assistant for FocusFlow.
 When users ask for help, extract the task details and call the appropriate function.
 Be conversational and friendly. For destructive operations like deleting, confirm the action by showing what will be deleted.
 
-IMPORTANT - Task Identification:
-- Tasks are shown as "Task #X: <full_id>" in the context
-- When updating or deleting, you MUST use the FULL task ID (the long string), NOT the task number
-- Copy the FULL task ID exactly as shown in the context
+CRITICAL - Task Identification for Updates/Deletes:
+- Users typically reference tasks by TITLE, not by ID
+- When a user says "change task", "update task", "for task", "modify task", or uses verbs like "change", "update", "modify", "set", "add due", "set priority" - they want to UPDATE an existing task
+- NEVER use createTask when the user wants to modify an existing task
+- Look at the task list below and find the task whose TITLE matches what the user said
+- Once you find the correct task by title, use its FULL ID for the updateTask function
+- The ID format shown is: [Title] (ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+
+KEYWORDS THAT MEAN UPDATE (NOT CREATE):
+- "change task X", "update task X", "modify task X"
+- "for task X, add/change/set..."
+- "set task X due to...", "change task X priority to..."
+- "mark task X as completed/in-progress"
+
+KEYWORDS THAT MEAN CREATE:
+- "create a new task", "add a task", "make a task"
+- "I need to...", "Remind me to..." (when no existing task is mentioned)
+
+Examples:
+- "change task Create new DI for OMI EPN due to 6 februari 2026" → UPDATE existing task, NOT create
+- "for task Prepare for create new DI, add due to 8 februari 2026" → UPDATE existing task, NOT create
+- "update task Buy groceries to high priority" → UPDATE existing task, NOT create
+- "create a task called Buy milk" → CREATE new task (this one doesn't exist yet)
+
+CRITICAL - Preserve Markdown Formatting in Descriptions:
+- When users provide a description with lists (using -, *, or bullets), headers, or any markdown formatting
+- You MUST preserve the exact markdown format in the description parameter
+- Do NOT convert lists to plain text - keep the "-" bullet points
+- Do NOT add any additional formatting or explanations within the description
+- Copy the description EXACTLY as the user provides it
 
 Guidelines:
 - Keep responses concise and helpful
@@ -123,7 +149,6 @@ Guidelines:
 - When updating tasks, mention what changed
 - When listing tasks, format them clearly with status and priority
 - If a user references "that task" or similar, ask for clarification about which task
-- Always use the FULL task ID (not the number) when updating/deleting specific tasks
 - Be proactive in suggesting relevant actions`;
 
 export async function POST(req: NextRequest) {
@@ -159,16 +184,15 @@ export async function POST(req: NextRequest) {
     // Build context message with task information
     const taskContext =
       userTasks.length > 0
-        ? `\n\nUser's current tasks (${userTasks.length}):\n${userTasks
-            .slice(0, 10)
+        ? `\n\n===== USER'S EXISTING TASKS =====\n${userTasks
+            .slice(0, 15)
             .map(
-              (t, index) =>
-                `- [Task #${index + 1}: ${t.id}] ${t.title} (Status: ${t.status}, Priority: ${t.priority})`,
+              (t) =>
+                `• "${t.title}" (ID: ${t.id}, Status: ${t.status}, Priority: ${t.priority})`,
             )
-            .join(
-              "\n",
-            )}${userTasks.length > 10 ? `\n... and ${userTasks.length - 10} more tasks` : ""}
-\n\nIMPORTANT: When updating or deleting tasks, use the FULL task ID (the string after "Task #X:"), not the task number.`
+            .join("\n")}${userTasks.length > 15 ? `\n... and ${userTasks.length - 15} more tasks` : ""}
+
+IMPORTANT: When updating a task, find the task by its TITLE in the list above, then use its ID (the long string after "ID:").`
         : "\n\nUser has no tasks yet.";
 
     // Build messages array
@@ -184,18 +208,15 @@ export async function POST(req: NextRequest) {
 
     // Call Groq API with function calling
     const response = await openai.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: "llama-3.3-70b-versatile",
       messages,
       functions,
       function_call: "auto",
-      temperature: 0.7,
-      max_tokens: 500,
+      temperature: 0.3,
+      max_tokens: 1024,
     });
 
-    debugger;
-    console.log("[Chat API] OpenAI response:", response);
     const choice = response.choices[0];
-    console.log("[Chat API] Choice:", choice.message);
     const messageContent = choice.message?.content || "";
 
     // Check if AI wants to call a function
@@ -298,10 +319,10 @@ export async function POST(req: NextRequest) {
 
       // Get final response from AI with function results
       const finalResponse = await openai.chat.completions.create({
-        model: "llama-3.1-8b-instant",
+        model: "llama-3.3-70b-versatile",
         messages: followUpMessages,
-        temperature: 0.7,
-        max_tokens: 500,
+        temperature: 0.3,
+        max_tokens: 1024,
       });
 
       const finalMessage =
