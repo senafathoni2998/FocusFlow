@@ -1,22 +1,22 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
+import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface TaskNotesProps {
-  notes: string | null
+  notes: string | null;
 }
 
 export default function TaskNotes({ notes }: TaskNotesProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(true);
 
   if (!notes || notes.trim() === "") {
-    return null
+    return null;
   }
 
   return (
-    <div className="mt-3 border-t border-gray-100 pt-2">
+    <div className="mt-3 mb-3 border-t border-gray-100 pt-2">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
@@ -41,10 +41,18 @@ export default function TaskNotes({ notes }: TaskNotesProps) {
             remarkPlugins={[remarkGfm]}
             components={{
               p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-              ul: ({ children }) => <ul className="list-disc list-inside mb-2">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal list-inside mb-2">{children}</ol>,
+              ul: ({ children }) => (
+                <ul className="list-disc list-inside mb-2">{children}</ul>
+              ),
+              ol: ({ children }) => (
+                <ol className="list-decimal list-inside mb-2">{children}</ol>
+              ),
               li: ({ children }) => <li className="mb-1">{children}</li>,
-              strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+              strong: ({ children }) => (
+                <strong className="font-semibold text-gray-900">
+                  {children}
+                </strong>
+              ),
               em: ({ children }) => <em className="italic">{children}</em>,
               a: ({ href, children }) => (
                 <a
@@ -61,9 +69,15 @@ export default function TaskNotes({ notes }: TaskNotesProps) {
                   {children}
                 </code>
               ),
-              h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
-              h2: ({ children }) => <h2 className="text-base font-semibold mb-2">{children}</h2>,
-              h3: ({ children }) => <h3 className="text-sm font-medium mb-1">{children}</h3>,
+              h1: ({ children }) => (
+                <h1 className="text-lg font-bold mb-2">{children}</h1>
+              ),
+              h2: ({ children }) => (
+                <h2 className="text-base font-semibold mb-2">{children}</h2>
+              ),
+              h3: ({ children }) => (
+                <h3 className="text-sm font-medium mb-1">{children}</h3>
+              ),
               blockquote: ({ children }) => (
                 <blockquote className="border-l-4 border-gray-300 pl-3 italic text-gray-600">
                   {children}
@@ -76,5 +90,5 @@ export default function TaskNotes({ notes }: TaskNotesProps) {
         </div>
       )}
     </div>
-  )
+  );
 }
