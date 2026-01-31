@@ -8,7 +8,6 @@ import { z } from "zod"
 const taskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  notes: z.string().optional(),
   priority: z.enum(["low", "medium", "high"]),
   dueDate: z.string().optional()
 })
@@ -16,7 +15,6 @@ const taskSchema = z.object({
 export async function createTask(data: {
   title: string
   description?: string
-  notes?: string
   priority?: string
   dueDate?: string
 }) {
@@ -30,7 +28,6 @@ export async function createTask(data: {
     const validated = taskSchema.parse({
       title: data.title,
       description: data.description,
-      notes: data.notes,
       priority: data.priority || "medium",
       dueDate: data.dueDate
     })
@@ -60,7 +57,6 @@ export async function updateTask(
   data: {
     title?: string
     description?: string
-    notes?: string
     status?: string
     priority?: string
     dueDate?: string
@@ -85,7 +81,6 @@ export async function updateTask(
     const updateData: any = {}
     if (data.title) updateData.title = data.title
     if (data.description !== undefined) updateData.description = data.description
-    if (data.notes !== undefined) updateData.notes = data.notes
     if (data.status) updateData.status = data.status
     if (data.priority) updateData.priority = data.priority
     if (data.dueDate !== undefined) {

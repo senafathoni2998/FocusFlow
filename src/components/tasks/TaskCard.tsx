@@ -2,14 +2,15 @@
 
 import { useState } from "react"
 import { updateTask, deleteTask } from "@/app/actions/tasks"
-import TaskNotes from "./TaskNotes"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import EditTaskForm from "./EditTaskForm"
 
 interface TaskCardProps {
   task: {
     id: string
     title: string
     description?: string | null
-    notes?: string | null
     status: string
     priority: string
     dueDate?: Date | null
@@ -74,10 +75,37 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
       </div>
 
       {task.description && (
-        <p className="text-gray-600 text-sm mb-2">{task.description}</p>
+        <div className="text-gray-600 text-sm mb-2 prose prose-sm max-w-none">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+              ul: ({ children }) => <ul className="list-disc list-inside mb-1">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal list-inside mb-1">{children}</ol>,
+              li: ({ children }) => <li className="mb-0">{children}</li>,
+              strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+              a: ({ href, children }) => (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary-600 hover:text-primary-700 underline"
+                >
+                  {children}
+                </a>
+              ),
+              code: ({ children }) => (
+                <code className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono">
+                  {children}
+                </code>
+              ),
+            }}
+          >
+            {task.description}
+          </ReactMarkdown>
+        </div>
       )}
-
-      <TaskNotes notes={task.notes ?? null} />
 
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
@@ -91,14 +119,52 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
           )}
         </div>
 
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          className="text-danger-600 hover:text-danger-800 text-sm disabled:opacity-50"
-        >
-          {deleting ? "Deleting..." : "Delete"}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setIsEditing(true)}
+            className="text-primary-600 hover:text-primary-800 text-sm"
+          >
+            Edit
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="text-danger-600 hover:text-danger-800 text-sm disabled:opacity-50"
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
       </div>
+
+      {/* Edit Modal */}
+      {isEditing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Edit Task</h2>
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <EditTaskForm
+                task={task}
+                onClose={() => setIsEditing(false)}
+                onUpdate={onUpdate}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
