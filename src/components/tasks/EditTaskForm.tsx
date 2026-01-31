@@ -1,7 +1,38 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { updateTask } from "@/app/actions/tasks"
+
+// Helper function to insert markdown around selected text
+const insertMarkdown = (
+  textarea: HTMLTextAreaElement,
+  setValue: (value: string) => void,
+  currentValue: string,
+  before: string,
+  after: string
+) => {
+  const start = textarea.selectionStart
+  const end = textarea.selectionEnd
+  const selectedText = currentValue.substring(start, end)
+
+  const newText =
+    currentValue.substring(0, start) +
+    before +
+    selectedText +
+    after +
+    currentValue.substring(end)
+
+  setValue(newText)
+
+  // Set cursor position after the inserted markdown
+  setTimeout(() => {
+    textarea.focus()
+    textarea.setSelectionRange(
+      start + before.length,
+      end + before.length
+    )
+  }, 0)
+}
 
 interface EditTaskFormProps {
   task: {
@@ -24,6 +55,23 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
   )
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget
+    const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0
+    const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey
+
+    if (cmdOrCtrl) {
+      if (e.key === "b") {
+        e.preventDefault()
+        insertMarkdown(textarea, setDescription, description, "**", "**")
+      } else if (e.key === "i") {
+        e.preventDefault()
+        insertMarkdown(textarea, setDescription, description, "*", "*")
+      }
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -72,12 +120,14 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
 
       <div>
         <label htmlFor="edit-description" className="block text-sm font-medium text-gray-700 mb-2">
-          Description <span className="text-gray-400 font-normal">(supports Markdown)</span>
+          Description <span className="text-gray-400 font-normal">(supports Markdown - Ctrl+B bold, Ctrl+I italic)</span>
         </label>
         <textarea
+          ref={descriptionRef}
           id="edit-description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={handleKeyDown}
           rows={5}
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition resize-none text-gray-700 placeholder:text-gray-400 font-mono text-sm"
           placeholder="- Add bullet points&#10;- **Bold** and *italic* text&#10;- # Headers&#10;- Links: [text](url)"
