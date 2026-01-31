@@ -1,15 +1,36 @@
 "use client"
 
-import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useState, useEffect } from "react"
+import { useState, useEffect, startTransition, useCallback } from "react"
 import { signOut, useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 
 export default function Navigation() {
   const pathname = usePathname()
+  const router = useRouter()
   const { data: session, status } = useSession()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [previousPathname, setPreviousPathname] = useState("")
+
+  // Detect navigation changes
+  useEffect(() => {
+    if (previousPathname && previousPathname !== pathname) {
+      setIsLoading(false)
+    }
+    setPreviousPathname(pathname)
+  }, [pathname, previousPathname])
+
+  // Custom navigation handler with loading state
+  const navigate = useCallback((href: string) => {
+    setIsLoading(true)
+    startTransition(() => {
+      router.push(href)
+    })
+    // Hide loading after a timeout (fallback)
+    setTimeout(() => setIsLoading(false), 5000)
+  }, [router])
 
   // Prevent hydration mismatch
   useEffect(() => {
@@ -44,18 +65,18 @@ export default function Navigation() {
         <div className="flex justify-between h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2">
               <span className="text-2xl">🎯</span>
               <span className="text-xl font-bold text-primary-600">FocusFlow</span>
-            </Link>
+            </button>
           </div>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-1">
             {navLinks.map((link) => (
-              <Link
+              <button
                 key={link.href}
-                href={link.href}
+                onClick={() => navigate(link.href)}
                 className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${
                   isActive(link.href)
                     ? "bg-primary-50 text-primary-700 font-medium"
@@ -64,7 +85,7 @@ export default function Navigation() {
               >
                 <span>{link.icon}</span>
                 <span>{link.label}</span>
-              </Link>
+              </button>
             ))}
 
             <div className="ml-4 pl-4 border-l border-gray-200">
@@ -105,11 +126,13 @@ export default function Navigation() {
         <div className="md:hidden border-t border-gray-200 bg-white">
           <div className="px-4 py-3 space-y-1">
             {navLinks.map((link) => (
-              <Link
+              <button
                 key={link.href}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`px-4 py-2 rounded-lg transition flex items-center gap-2 ${
+                onClick={() => {
+                  navigate(link.href)
+                  setMobileMenuOpen(false)
+                }}
+                className={`w-full text-left px-4 py-2 rounded-lg transition flex items-center gap-2 ${
                   isActive(link.href)
                     ? "bg-primary-50 text-primary-700 font-medium"
                     : "text-gray-700 hover:bg-gray-100"
@@ -117,7 +140,7 @@ export default function Navigation() {
               >
                 <span>{link.icon}</span>
                 <span>{link.label}</span>
-              </Link>
+              </button>
             ))}
             <div className="pt-2 border-t border-gray-200">
               <button
@@ -130,6 +153,16 @@ export default function Navigation() {
                 Sign Out
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin"></div>
+            <p className="text-gray-600 font-medium">Loading...</p>
           </div>
         </div>
       )}
