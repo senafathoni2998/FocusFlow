@@ -51,11 +51,11 @@ cp .env.example .env
 Edit `.env` and add your values:
 ```env
 DATABASE_URL="postgresql://user:password@localhost:5432/focusflow"
-AUTH_SECRET="your-auth-secret-here"
+NEXTAUTH_SECRET="your-auth-secret-here"
 ZAI_API_KEY="your-zai-api-key-here"
 ```
 
-Generate an AUTH_SECRET:
+Generate an NEXTAUTH_SECRET:
 ```bash
 openssl rand -base64 32
 ```
@@ -173,7 +173,7 @@ vercel
 
 4. Add environment variables in Vercel dashboard:
    - `DATABASE_URL`
-   - `AUTH_SECRET`
+   - `NEXTAUTH_SECRET`
    - `ZAI_API_KEY` (optional)
 
 5. Run migrations on production:
@@ -226,7 +226,7 @@ Available Z.AI models:
 
 ### NextAuth Issues
 - Clear browser cookies
-- Verify AUTH_SECRET is set
+- Verify NEXTAUTH_SECRET is set
 - Check NextAuth configuration
 
 ## Contributing
