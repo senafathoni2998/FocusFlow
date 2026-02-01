@@ -39,6 +39,14 @@ interface TaskBoardProps {
   onUpdate?: () => void
 }
 
+type FilterType = "all" | "todo" | "in-progress" | "completed"
+type PriorityFilterType = "all" | "low" | "medium" | "high"
+
+// Helper function to avoid TypeScript narrowing issues
+function isFilterMatch(current: FilterType, target: FilterType): boolean {
+  return current === target
+}
+
 // Draggable wrapper for TaskCard
 function DraggableTaskCard({ task, onUpdate }: { task: Task; onUpdate?: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -104,8 +112,9 @@ function Column({
 export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardProps) {
   const router = useRouter()
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [filter, setFilter] = useState<"all" | "todo" | "in-progress" | "completed">("all")
-  const [priorityFilter, setPriorityFilter] = useState<"all" | "low" | "medium" | "high">("all")
+
+  const [filter, setFilter] = useState<FilterType>("all" as FilterType)
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilterType>("all" as PriorityFilterType)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   // Local state for optimistic updates
@@ -328,9 +337,9 @@ export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardPr
               All
             </button>
             <button
-              onClick={() => setFilter("todo")}
+              onClick={() => setFilter("todo" as FilterType)}
               className={`px-3 py-1 rounded-lg text-sm transition ${
-                filter === "todo"
+                isFilterMatch(filter, "todo")
                   ? "bg-primary-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
@@ -338,9 +347,9 @@ export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardPr
               To Do
             </button>
             <button
-              onClick={() => setFilter("in-progress")}
+              onClick={() => setFilter("in-progress" as FilterType)}
               className={`px-3 py-1 rounded-lg text-sm transition ${
-                filter === "in-progress"
+                isFilterMatch(filter, "in-progress")
                   ? "bg-primary-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
@@ -348,9 +357,9 @@ export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardPr
               In Progress
             </button>
             <button
-              onClick={() => setFilter("completed")}
+              onClick={() => setFilter("completed" as FilterType)}
               className={`px-3 py-1 rounded-lg text-sm transition ${
-                filter === "completed"
+                isFilterMatch(filter, "completed")
                   ? "bg-primary-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
@@ -466,9 +475,9 @@ export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardPr
               All
             </button>
             <button
-              onClick={() => setFilter("todo")}
+              onClick={() => setFilter("todo" as FilterType)}
               className={`px-3 py-1 rounded-lg text-sm transition ${
-                filter === "todo"
+                isFilterMatch(filter, "todo")
                   ? "bg-primary-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
@@ -476,9 +485,9 @@ export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardPr
               To Do
             </button>
             <button
-              onClick={() => setFilter("in-progress")}
+              onClick={() => setFilter("in-progress" as FilterType)}
               className={`px-3 py-1 rounded-lg text-sm transition ${
-                filter === "in-progress"
+                isFilterMatch(filter, "in-progress")
                   ? "bg-primary-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
@@ -486,9 +495,9 @@ export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardPr
               In Progress
             </button>
             <button
-              onClick={() => setFilter("completed")}
+              onClick={() => setFilter("completed" as FilterType)}
               className={`px-3 py-1 rounded-lg text-sm transition ${
-                filter === "completed"
+                isFilterMatch(filter, "completed")
                   ? "bg-primary-600 text-white"
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
