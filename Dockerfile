@@ -43,7 +43,6 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy necessary files
-COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
 # Copy Prisma files and generated client
@@ -53,10 +52,10 @@ COPY --from=builder /app/prisma ./prisma
 
 # Copy the Next.js build output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static/ ./.next/static/
 
 # Set the correct permission for prerender cache
-RUN mkdir -p .next/cache/images && chown -R nextjs:nodejs .next/cache
+RUN mkdir -p .next/cache/images public && chown -R nextjs:nodejs .next/cache public
 
 USER nextjs
 
