@@ -203,8 +203,8 @@ export default function TaskBoard({ tasks: initialTasks, onUpdate }: TaskBoardPr
       const overIndex = tasksInNewStatus.findIndex((t) => t.id === overId)
       if (overIndex !== -1) {
         // Determine if we're dropping above or below the target card
-        const activeRect = active.rect.current
-        const overRect = over.rect
+        const activeRect = active.rect.current?.translated ?? active.rect.current?.initial ?? null
+        const overRect = over.rect ?? null
 
         if (activeRect && overRect) {
           const activeVerticalCenter = activeRect.top + activeRect.height / 2
