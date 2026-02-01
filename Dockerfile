@@ -4,13 +4,21 @@ RUN apk add --no-cache libc6-compat
 
 WORKDIR /app
 
+# Prisma generate runs on postinstall; provide schema + a safe default DATABASE_URL for build
+ARG DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+ENV DATABASE_URL=${DATABASE_URL}
+
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json* ./
+COPY prisma/schema.prisma ./prisma/schema.prisma
 RUN npm ci
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+ARG DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+ENV DATABASE_URL=${DATABASE_URL}
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
