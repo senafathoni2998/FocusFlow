@@ -4,6 +4,10 @@ RUN apk add --no-cache libc6-compat
 
 WORKDIR /app
 
+# Ensure dev dependencies (Prisma CLI) are installed in build stages
+ENV NODE_ENV=development
+ENV NPM_CONFIG_PRODUCTION=false
+
 # Prisma generate runs on postinstall; provide schema + a safe default DATABASE_URL for build
 ARG DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
 ENV DATABASE_URL=${DATABASE_URL}
