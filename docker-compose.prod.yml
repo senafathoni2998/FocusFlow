@@ -22,6 +22,21 @@ services:
       retries: 5
 
   # FocusFlow App (pulled from Docker Hub)
+  migrate:
+    image: ${DOCKERHUB_USERNAME:-your-username}/focusflow-migrate:${IMAGE_TAG:-latest}
+    container_name: focusflow-migrate
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-focusflow}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "
+        npx prisma migrate deploy
+      "
+
   app:
     image: ${DOCKERHUB_USERNAME:-your-username}/focusflow:${IMAGE_TAG:-latest}
     container_name: focusflow-app
@@ -37,9 +52,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: >
       sh -c "
-        npx prisma migrate deploy &&
         node server.js
       "
 
