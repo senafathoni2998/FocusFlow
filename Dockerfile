@@ -11,6 +11,7 @@ ENV DATABASE_URL=${DATABASE_URL}
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json* ./
 COPY prisma/schema.prisma ./prisma/schema.prisma
+COPY prisma.config.ts ./prisma.config.ts
 RUN npm ci
 
 # Stage 2: Builder
@@ -48,7 +49,10 @@ COPY --from=builder /app/package.json ./package.json
 # Copy Prisma files and generated client
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
 # Copy the Next.js build output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

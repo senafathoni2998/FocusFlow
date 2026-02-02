@@ -1,5 +1,8 @@
 import '@testing-library/jest-dom'
 
+// Ensure Prisma adapter has a connection string during tests
+process.env.DATABASE_URL ||= 'postgresql://postgres:postgres@localhost:5432/postgres'
+
 // Polyfill for fetch in jsdom
 global.fetch = jest.fn()
 
