@@ -48,6 +48,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-focusflow}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
       GROQ_API_KEY: ${GROQ_API_KEY}
     depends_on:
       postgres:
