@@ -4,33 +4,31 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: focusflow-db
+    container_name: focusflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-focusflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: ${POSTGRES_DB:-focusflow}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Mount to host directory for easy backup
+      - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5435:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-focusflow}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Next.js App
+  # FocusFlow App (pulled from Docker Hub)
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: builder
+    image: ${DOCKERHUB_USERNAME:-your-username}/focusflow-migrate:${IMAGE_TAG:-latest}
     container_name: focusflow-migrate
     restart: "no"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-focusflow}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-focusflow}
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,18 +38,17 @@ services:
       "
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${DOCKERHUB_USERNAME:-your-username}/focusflow:${IMAGE_TAG:-latest}
     container_name: focusflow-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-focusflow}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-focusflow}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
       GROQ_API_KEY: ${GROQ_API_KEY}
     depends_on:
       postgres:
@@ -63,5 +60,7 @@ services:
         node server.js
       "
 
-volumes:
-  postgres_data:
+# Optional: Named volume for data (alternative to bind mount)
+# Uncomment below to use Docker volume instead of host directory
+# volumes:
+#   postgres_data:
