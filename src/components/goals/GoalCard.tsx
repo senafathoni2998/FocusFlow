@@ -30,9 +30,16 @@ export default function GoalCard({ goal, onAdjust, onSetStatus, onEdit, onDelete
 
   const progress = computeGoalProgress(goal)
   const isNumeric = goal.progressType === "numeric"
+  const isTasks = goal.progressType === "tasks"
   const isAchieved = goal.status === "achieved"
   const fill = FILL[goal.color] ?? FILL.primary
   const step = isNumeric ? 1 : 10
+
+  const metaLabel = isTasks
+    ? `${goal.taskCompleted ?? 0}/${goal.taskTotal ?? 0} tasks`
+    : isNumeric
+      ? `${formatNum(goal.currentValue)}/${formatNum(goal.targetValue ?? 0)} ${goal.unit ?? ""}`
+      : `${progress.percent}%`
 
   const deadline = () => {
     if (progress.daysRemaining === null || isAchieved || progress.isAchieved) return null
@@ -64,32 +71,34 @@ export default function GoalCard({ goal, onAdjust, onSetStatus, onEdit, onDelete
         </div>
 
         <div className="mt-1 text-xs text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-          <span className="tabular-nums">
-            {isNumeric ? `${formatNum(goal.currentValue)}/${formatNum(goal.targetValue ?? 0)} ${goal.unit ?? ""}` : `${progress.percent}%`}
-          </span>
+          <span className="tabular-nums">{metaLabel}</span>
           {mounted && deadline()}
         </div>
       </div>
 
       <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onAdjust(-step)}
-          disabled={busy}
-          aria-label="Decrease progress"
-          className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 leading-none"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          onClick={() => onAdjust(step)}
-          disabled={busy}
-          aria-label="Increase progress"
-          className={`w-8 h-8 rounded-full text-white leading-none ${fill} disabled:opacity-50`}
-        >
-          +
-        </button>
+        {!isTasks && (
+          <>
+            <button
+              type="button"
+              onClick={() => onAdjust(-step)}
+              disabled={busy}
+              aria-label="Decrease progress"
+              className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-40 leading-none"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onClick={() => onAdjust(step)}
+              disabled={busy}
+              aria-label="Increase progress"
+              className={`w-8 h-8 rounded-full text-white leading-none ${fill} disabled:opacity-50`}
+            >
+              +
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={() => onSetStatus(isAchieved ? "active" : "achieved")}

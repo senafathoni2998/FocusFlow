@@ -23,9 +23,12 @@ jest.mock("@/app/actions/tasks", () => ({
   deleteTask: jest.fn().mockResolvedValue({ success: true }),
 }))
 
-// EditTaskForm fetches lists on mount for its List dropdown.
+// EditTaskForm fetches lists + goal options on mount for its dropdowns.
 jest.mock("@/app/actions/lists", () => ({
   getLists: jest.fn().mockResolvedValue([]),
+}))
+jest.mock("@/app/actions/goals", () => ({
+  getGoalOptions: jest.fn().mockResolvedValue([]),
 }))
 
 const mockTask = {
@@ -271,6 +274,7 @@ describe("EditTaskForm Component", () => {
           priority: "medium",
           dueDate: "2025-01-15",
           listId: null,
+          goalId: null,
           tags: [],
           recurrence: null,
         })
@@ -345,6 +349,7 @@ describe("EditTaskForm Component", () => {
           priority: "high",
           dueDate: "",
           listId: null,
+          goalId: null,
           tags: [],
           recurrence: null,
         })

@@ -15,6 +15,8 @@ const mk = (o: Partial<Goal> = {}): Goal => ({
   manualProgress: o.manualProgress ?? 0,
   targetDate: o.targetDate ?? null,
   status: o.status ?? "active",
+  taskTotal: o.taskTotal,
+  taskCompleted: o.taskCompleted,
 })
 
 const noop = () => {}
@@ -57,5 +59,16 @@ describe("GoalCard", () => {
     expect(screen.getByText("✓ Achieved")).toBeInTheDocument()
     await userEvent.click(screen.getByRole("button", { name: "Reactivate" }))
     expect(onSetStatus).toHaveBeenCalledWith("active")
+  })
+
+  it("a tasks-progress goal shows X/Y tasks and hides the manual +/- buttons", () => {
+    render(
+      <GoalCard goal={mk({ progressType: "tasks", taskCompleted: 2, taskTotal: 5 })} {...handlers} />
+    )
+    expect(screen.getByText(/2\/5 tasks/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Increase progress" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Decrease progress" })).not.toBeInTheDocument()
+    // the achieve toggle is still available
+    expect(screen.getByRole("button", { name: "Mark achieved" })).toBeInTheDocument()
   })
 })

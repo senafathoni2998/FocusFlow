@@ -5,7 +5,7 @@ export interface Goal {
   description?: string | null
   icon: string
   color: string
-  progressType: string // manual | numeric
+  progressType: string // manual | numeric | tasks
   targetValue?: number | null
   currentValue: number
   unit?: string | null
@@ -14,6 +14,17 @@ export interface Goal {
   status: string // active | achieved | archived
   order?: number
   createdAt?: Date | string
+  // Derived counts for a "tasks"-progress goal (computed in getGoals from linked
+  // tasks; wont-do tasks are excluded from the total).
+  taskTotal?: number
+  taskCompleted?: number
+}
+
+/** Minimal goal shape for the task-form assignment dropdown. */
+export interface GoalOption {
+  id: string
+  title: string
+  icon: string
 }
 
 export const GOAL_COLORS = ["primary", "success", "warning", "danger"] as const

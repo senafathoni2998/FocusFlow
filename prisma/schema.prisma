@@ -76,6 +76,8 @@ model Goal {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  tasks Task[]
+
   @@index([userId, status])
 }
 
@@ -174,6 +176,11 @@ model Task {
   recurrenceId String?         @unique
   recurrence   RecurrenceRule? @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
 
+  // Goal this task contributes to. Deleting a goal keeps the task (SetNull); a
+  // "tasks"-progress goal derives its percent from its linked tasks.
+  goalId String?
+  goal   Goal?   @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
@@ -186,6 +193,7 @@ model Task {
   @@index([userId, priorityRank])
   @@index([parentTaskId])
   @@index([userId, listId])
+  @@index([goalId])
 }
 
 model FocusSession {

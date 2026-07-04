@@ -81,6 +81,7 @@ const taskSchema = z.object({
   estimatedPomos: z.number().int().positive().optional(),
   parentTaskId: z.string().optional(),
   listId: z.string().nullable().optional(),
+  goalId: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   recurrence: z.enum(["daily", "weekly", "monthly", "yearly"]).nullable().optional(),
 })
@@ -96,6 +97,7 @@ export async function createTask(data: {
   estimatedPomos?: number
   parentTaskId?: string
   listId?: string | null
+  goalId?: string | null
   tags?: string[]
   recurrence?: string | null
 }) {
@@ -117,6 +119,7 @@ export async function createTask(data: {
       estimatedPomos: data.estimatedPomos,
       parentTaskId: data.parentTaskId,
       listId: data.listId,
+      goalId: data.goalId,
       tags: data.tags,
       recurrence: data.recurrence,
     })
@@ -140,6 +143,17 @@ export async function createTask(data: {
       })
       if (!list) {
         return { error: "List not found" }
+      }
+    }
+
+    // Verify goal ownership if a goal was chosen.
+    if (validated.goalId) {
+      const goal = await prisma.goal.findFirst({
+        where: { id: validated.goalId, userId: session.user.id },
+        select: { id: true },
+      })
+      if (!goal) {
+        return { error: "Goal not found" }
       }
     }
 
@@ -181,6 +195,7 @@ export async function createTask(data: {
         estimatedPomos: validated.estimatedPomos,
         parentTaskId: validated.parentTaskId,
         listId: validated.listId,
+        goalId: validated.goalId,
         order: nextOrder,
         recurrenceId,
         ...(tagInput.length ? { tags: { create: tagInput } } : {}),
@@ -190,6 +205,7 @@ export async function createTask(data: {
 
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
+    revalidatePath("/goals")
 
     return { success: true, task }
   } catch (error) {
@@ -214,6 +230,7 @@ export async function updateTask(
     estimatedPomos?: number
     parentTaskId?: string | null
     listId?: string | null
+    goalId?: string | null
     tags?: string[]
     recurrence?: string | null
   }
@@ -306,6 +323,21 @@ export async function updateTask(
       }
     }
 
+    if (data.goalId !== undefined) {
+      if (data.goalId === null) {
+        updateData.goalId = null
+      } else {
+        const goal = await prisma.goal.findFirst({
+          where: { id: data.goalId, userId: session.user.id },
+          select: { id: true },
+        })
+        if (!goal) {
+          return { error: "Goal not found" }
+        }
+        updateData.goalId = data.goalId
+      }
+    }
+
     if (data.tags !== undefined) {
       // Replace the full tag set: clear existing joins, then connect/create.
       updateData.tags = {
@@ -347,6 +379,7 @@ export async function updateTask(
 
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
+    revalidatePath("/goals")
 
     return { success: true, task }
   } catch (error) {
@@ -384,6 +417,7 @@ export async function deleteTask(id: string) {
 
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
+    revalidatePath("/goals")
 
     return { success: true }
   } catch (error) {
@@ -439,6 +473,7 @@ export async function completeTask(id: string) {
 
         revalidatePath("/tasks")
         revalidatePath("/dashboard")
+        revalidatePath("/goals")
         return { success: true, recurred: true }
       }
     }
@@ -450,6 +485,7 @@ export async function completeTask(id: string) {
 
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
+    revalidatePath("/goals")
     return { success: true, task: updated }
   } catch (error) {
     return { error: "Failed to complete task" }
@@ -520,6 +556,7 @@ export async function reorderTask(data: {
 
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
+    revalidatePath("/goals")
 
     return { success: true, task }
   } catch (error) {

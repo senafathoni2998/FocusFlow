@@ -40,6 +40,11 @@ jest.mock("@/app/actions/tags", () => ({
   getTags: jest.fn(),
 }))
 
+// Mock @/app/actions/goals (page fetches active goal options for the task form)
+jest.mock("@/app/actions/goals", () => ({
+  getGoalOptions: jest.fn().mockResolvedValue([]),
+}))
+
 // Mock TasksWorkspace (the page's child component)
 jest.mock("@/components/tasks/TasksWorkspace", () => {
   return function MockTasksWorkspace({ tasks }: { tasks: any[] }) {

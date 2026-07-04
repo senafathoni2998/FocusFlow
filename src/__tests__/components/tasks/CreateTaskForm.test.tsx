@@ -542,4 +542,23 @@ describe("CreateTaskForm Component", () => {
       })
     })
   })
+
+  describe("Goal assignment", () => {
+    it("does not render the Goal dropdown when no goals are provided", () => {
+      render(<CreateTaskForm />)
+      expect(screen.queryByLabelText(/^goal$/i)).not.toBeInTheDocument()
+    })
+
+    it("renders the Goal dropdown and submits the chosen goalId", async () => {
+      const user = userEvent.setup()
+      mockCreateTask.mockResolvedValue({ success: true })
+      render(<CreateTaskForm goals={[{ id: "g1", title: "Read", icon: "🎯" }]} />)
+
+      await user.type(screen.getByLabelText(/title \*/i), "Chapter 1")
+      await user.selectOptions(screen.getByLabelText(/^goal$/i), "g1")
+      await user.click(screen.getByRole("button", { name: "Create Task" }))
+
+      expect(mockCreateTask).toHaveBeenCalledWith(expect.objectContaining({ goalId: "g1" }))
+    })
+  })
 })

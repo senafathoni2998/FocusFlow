@@ -15,7 +15,7 @@ const goalSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   icon: z.string().max(8).optional(),
   color: z.enum(["primary", "success", "warning", "danger"]).optional(),
-  progressType: z.enum(["manual", "numeric"]).optional(),
+  progressType: z.enum(["manual", "numeric", "tasks"]).optional(),
   targetValue: z.number().positive().max(1_000_000).nullable().optional(),
   currentValue: z.number().min(0).max(1_000_000).optional(),
   unit: z.string().max(20).nullable().optional(),
@@ -42,9 +42,40 @@ export async function getGoals() {
   if (!userId) return []
 
   try {
+    const goals = await prisma.goal.findMany({
+      where: { userId, status: { not: "archived" } },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      include: { tasks: { select: { status: true, recurrenceId: true } } },
+    })
+
+    // Derive linked-task counts for "tasks"-progress goals. Abandoned (wont-do)
+    // tasks drop out of the denominator so they don't drag the percent down, and
+    // recurring tasks are excluded entirely — they roll forward on completion and
+    // would otherwise cap the goal below 100% forever.
+    return goals.map(({ tasks, ...goal }) => {
+      const counted = (tasks ?? []).filter((t) => t.status !== "wont-do" && !t.recurrenceId)
+      return {
+        ...goal,
+        taskTotal: counted.length,
+        taskCompleted: counted.filter((t) => t.status === "completed").length,
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+/** Active/achieved goals as lightweight options for the task-assignment dropdown. */
+export async function getGoalOptions() {
+  const session = await auth()
+  const userId = session?.user?.id
+  if (!userId) return []
+
+  try {
     return await prisma.goal.findMany({
       where: { userId, status: { not: "archived" } },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      select: { id: true, title: true, icon: true },
     })
   } catch {
     return []
@@ -153,6 +184,9 @@ export async function adjustGoalProgress(id: string, delta: number) {
   try {
     const goal = await prisma.goal.findFirst({ where: { id, userId: session.user.id } })
     if (!goal) return { error: "Goal not found" }
+
+    // "tasks" goals derive their progress from linked tasks — nothing to nudge.
+    if (goal.progressType === "tasks") return { success: true }
 
     if (goal.progressType === "numeric") {
       const currentValue = Math.max(0, Math.min(1_000_000, goal.currentValue + delta))

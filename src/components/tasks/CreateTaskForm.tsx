@@ -3,6 +3,7 @@
 import { useState, useRef } from "react"
 import { createTask } from "@/app/actions/tasks"
 import type { ListSummary } from "@/types/task"
+import type { GoalOption } from "@/types/goal"
 import { RECURRENCE_FREQS, RECURRENCE_LABELS } from "@/lib/recurrence"
 
 // Helper function to insert markdown around selected text
@@ -39,15 +40,17 @@ const insertMarkdown = (
 interface CreateTaskFormProps {
   onClose?: () => void
   lists?: ListSummary[]
+  goals?: GoalOption[]
   defaultListId?: string
 }
 
-export default function CreateTaskForm({ onClose, lists = [], defaultListId = "" }: CreateTaskFormProps) {
+export default function CreateTaskForm({ onClose, lists = [], goals = [], defaultListId = "" }: CreateTaskFormProps) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [priority, setPriority] = useState("medium")
   const [dueDate, setDueDate] = useState("")
   const [listId, setListId] = useState(defaultListId)
+  const [goalId, setGoalId] = useState("")
   const [tags, setTags] = useState("")
   const [recurrence, setRecurrence] = useState("")
   const [error, setError] = useState("")
@@ -81,6 +84,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
       priority,
       dueDate,
       listId: listId || undefined,
+      goalId: goalId || undefined,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       recurrence: recurrence || null,
     })
@@ -94,6 +98,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
       setPriority("medium")
       setDueDate("")
       setListId(defaultListId)
+      setGoalId("")
       setTags("")
       setRecurrence("")
       setLoading(false)
@@ -190,6 +195,27 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
           ))}
         </select>
       </div>
+
+      {goals.length > 0 && (
+        <div>
+          <label htmlFor="goal" className="block text-sm font-medium text-gray-700 mb-2">
+            Goal
+          </label>
+          <select
+            id="goal"
+            value={goalId}
+            onChange={(e) => setGoalId(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
+          >
+            <option value="">No goal</option>
+            {goals.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.icon} {g.title}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div>
         <label htmlFor="tags" className="block text-sm font-medium text-gray-700 mb-2">

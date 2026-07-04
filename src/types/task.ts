@@ -30,6 +30,7 @@ export interface Task {
   priorityRank?: number
   parentTaskId?: string | null
   listId?: string | null
+  goalId?: string | null
   tags?: TagSummary[]
   recurrence?: RecurrenceSummary | null
 }

@@ -46,14 +46,41 @@ describe("Goal Actions", () => {
       expect(await getGoals()).toEqual([])
     })
 
-    it("returns the user's non-archived goals", async () => {
+    it("returns the user's non-archived goals with derived task counts", async () => {
       mockAuth.mockResolvedValue(session)
-      ;(mockPrisma.goal.findMany as jest.Mock).mockResolvedValue([{ id: "g1" }])
+      ;(mockPrisma.goal.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: "g1",
+          tasks: [
+            { status: "completed", recurrenceId: null },
+            { status: "todo", recurrenceId: null },
+            { status: "wont-do", recurrenceId: null }, // excluded from the denominator
+            { status: "completed", recurrenceId: "r1" }, // excluded: recurring tasks never "finish"
+          ],
+        },
+      ])
       const res = await getGoals()
       expect(mockPrisma.goal.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { userId: "u1", status: { not: "archived" } } })
       )
-      expect(res).toEqual([{ id: "g1" }])
+      // 2 counted (completed + todo), 1 completed; wont-do + recurring dropped; raw tasks stripped.
+      expect(res).toEqual([{ id: "g1", taskTotal: 2, taskCompleted: 1 }])
+    })
+  })
+
+  describe("getGoalOptions", () => {
+    it("returns lightweight active/achieved options", async () => {
+      const { getGoalOptions } = require("@/app/actions/goals")
+      mockAuth.mockResolvedValue(session)
+      ;(mockPrisma.goal.findMany as jest.Mock).mockResolvedValue([{ id: "g1", title: "Read", icon: "🎯" }])
+      const res = await getGoalOptions()
+      expect(mockPrisma.goal.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "u1", status: { not: "archived" } },
+          select: { id: true, title: true, icon: true },
+        })
+      )
+      expect(res).toEqual([{ id: "g1", title: "Read", icon: "🎯" }])
     })
   })
 
@@ -146,6 +173,13 @@ describe("Goal Actions", () => {
       expect(await adjustGoalProgress("g1", Infinity)).toEqual({ error: "Invalid input" })
       expect(await adjustGoalProgress("g1", 1e9)).toEqual({ error: "Invalid input" })
       expect(mockPrisma.goal.findFirst).not.toHaveBeenCalled()
+    })
+
+    it("is a no-op for a tasks-progress goal (progress is derived)", async () => {
+      mockAuth.mockResolvedValue(session)
+      ;(mockPrisma.goal.findFirst as jest.Mock).mockResolvedValue({ id: "g1", userId: "u1", progressType: "tasks" })
+      expect(await adjustGoalProgress("g1", 10)).toEqual({ success: true })
+      expect(mockPrisma.goal.update).not.toHaveBeenCalled()
     })
   })
 

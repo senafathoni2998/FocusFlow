@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import type { Task, ListSummary, TagSummary } from "@/types/task"
+import type { GoalOption } from "@/types/goal"
 import {
   applyFilters,
   type TaskFilters,
@@ -61,6 +62,7 @@ interface TasksWorkspaceProps {
   tasks: Task[]
   lists: ListSummary[]
   allTags: TagSummary[]
+  goals: GoalOption[]
 }
 
 /**
@@ -69,7 +71,7 @@ interface TasksWorkspaceProps {
  * smart list is a shareable, refresh-surviving link. Optimistic task state and
  * AI-driven refresh are owned here and shared by every view.
  */
-export default function TasksWorkspace({ tasks, lists, allTags }: TasksWorkspaceProps) {
+export default function TasksWorkspace({ tasks, lists, allTags, goals }: TasksWorkspaceProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -332,6 +334,7 @@ export default function TasksWorkspace({ tasks, lists, allTags }: TasksWorkspace
             <CreateTaskForm
               onClose={() => setShowCreate(false)}
               lists={lists}
+              goals={goals}
               defaultListId={typeof filters.listId === "string" ? filters.listId : ""}
             />
           </div>

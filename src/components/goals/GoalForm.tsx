@@ -144,6 +144,7 @@ export default function GoalForm({ goal, onClose, onSaved }: GoalFormProps) {
         >
           <option value="manual">Track by percent</option>
           <option value="numeric">Count toward a target</option>
+          <option value="tasks">From linked tasks</option>
         </select>
       </div>
 
@@ -171,6 +172,12 @@ export default function GoalForm({ goal, onClose, onSaved }: GoalFormProps) {
             />
           </div>
         </div>
+      )}
+
+      {progressType === "tasks" && (
+        <p className="text-xs text-gray-500">
+          Progress tracks the share of this goal&apos;s tasks marked complete. Assign a task to this goal from the task&apos;s <span className="font-medium">Goal</span> field.
+        </p>
       )}
 
       <div>

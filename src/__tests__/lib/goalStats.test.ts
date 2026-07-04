@@ -15,6 +15,8 @@ const mk = (o: Partial<Goal> = {}): Goal => ({
   manualProgress: o.manualProgress ?? 0,
   targetDate: o.targetDate ?? null,
   status: o.status ?? "active",
+  taskTotal: o.taskTotal,
+  taskCompleted: o.taskCompleted,
 })
 
 // Target dates are calendar-day deadlines stored at UTC midnight.
@@ -35,6 +37,11 @@ describe("goalPercent", () => {
   it("numeric: zero or absent target = 0 (no divide by zero)", () => {
     expect(goalPercent(mk({ progressType: "numeric", currentValue: 5, targetValue: 0 }))).toBe(0)
     expect(goalPercent(mk({ progressType: "numeric", currentValue: 5, targetValue: null }))).toBe(0)
+  })
+
+  it("tasks: completed / total, with no tasks = 0", () => {
+    expect(goalPercent(mk({ progressType: "tasks", taskCompleted: 3, taskTotal: 4 }))).toBe(75)
+    expect(goalPercent(mk({ progressType: "tasks", taskCompleted: 0, taskTotal: 0 }))).toBe(0)
   })
 })
 

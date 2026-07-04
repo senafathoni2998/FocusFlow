@@ -23,6 +23,11 @@ function clampPct(n: number): number {
 }
 
 export function goalPercent(goal: Goal): number {
+  if (goal.progressType === "tasks") {
+    const total = goal.taskTotal ?? 0
+    if (total <= 0) return 0
+    return clampPct(((goal.taskCompleted ?? 0) / total) * 100)
+  }
   if (goal.progressType === "numeric") {
     const target = goal.targetValue ?? 0
     if (target <= 0) return 0

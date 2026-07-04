@@ -3,7 +3,9 @@
 import { useState, useRef, useEffect } from "react"
 import { updateTask, createTask, deleteTask } from "@/app/actions/tasks"
 import { getLists } from "@/app/actions/lists"
+import { getGoalOptions } from "@/app/actions/goals"
 import type { ListSummary, Task, TagSummary, RecurrenceSummary } from "@/types/task"
+import type { GoalOption } from "@/types/goal"
 import { RECURRENCE_FREQS, RECURRENCE_LABELS } from "@/lib/recurrence"
 
 // Helper function to insert markdown around selected text
@@ -45,6 +47,7 @@ interface EditTaskFormProps {
     priority: string
     dueDate?: Date | null
     listId?: string | null
+    goalId?: string | null
     tags?: TagSummary[]
     recurrence?: RecurrenceSummary | null
   }
@@ -72,9 +75,11 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
     task.dueDate ? toDateInputValue(task.dueDate) : ""
   )
   const [listId, setListId] = useState(task.listId ?? "")
+  const [goalId, setGoalId] = useState(task.goalId ?? "")
   const [tags, setTags] = useState((task.tags ?? []).map((t) => t.name).join(", "))
   const [recurrence, setRecurrence] = useState(task.recurrence?.freq ?? "")
   const [lists, setLists] = useState<ListSummary[]>([])
+  const [goals, setGoals] = useState<GoalOption[]>([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [newSubtask, setNewSubtask] = useState("")
@@ -83,6 +88,7 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
 
   useEffect(() => {
     getLists().then(setLists)
+    getGoalOptions().then(setGoals)
   }, [])
 
   const addSubtask = async () => {
@@ -132,6 +138,7 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
       priority,
       dueDate,
       listId: listId || null,
+      goalId: goalId || null,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       recurrence: recurrence || null,
     })
@@ -235,6 +242,27 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
           ))}
         </select>
       </div>
+
+      {goals.length > 0 && (
+        <div>
+          <label htmlFor="edit-goal" className="block text-sm font-medium text-gray-700 mb-2">
+            Goal
+          </label>
+          <select
+            id="edit-goal"
+            value={goalId}
+            onChange={(e) => setGoalId(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
+          >
+            <option value="">No goal</option>
+            {goals.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.icon} {g.title}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div>
         <label htmlFor="edit-tags" className="block text-sm font-medium text-gray-700 mb-2">

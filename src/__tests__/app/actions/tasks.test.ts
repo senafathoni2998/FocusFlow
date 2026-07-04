@@ -31,6 +31,8 @@ jest.mock("@/lib/prisma", () => ({
       update: jest.fn(),
       delete: jest.fn(),
     },
+    list: { findFirst: jest.fn() },
+    goal: { findFirst: jest.fn() },
     $transaction: jest.fn(),
   },
 }))
@@ -241,6 +243,34 @@ describe("Task Actions", () => {
       expect(mockPrisma.task.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ priority: "low", priorityRank: 1 }),
       })
+    })
+
+    it("rejects a goal the user does not own", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.goal.findFirst as jest.Mock).mockResolvedValue(null)
+
+      const res = await createTask({ title: "T", goalId: "g-x" })
+
+      expect(res).toEqual({ error: "Goal not found" })
+      expect(mockPrisma.task.create).not.toHaveBeenCalled()
+    })
+
+    it("sets goalId when the goal is owned", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.goal.findFirst as jest.Mock).mockResolvedValue({ id: "g1" })
+      mockPrisma.task.create.mockResolvedValue({ id: "task-1" } as any)
+
+      await createTask({ title: "T", goalId: "g1" })
+
+      expect(mockPrisma.goal.findFirst).toHaveBeenCalledWith({
+        where: { id: "g1", userId: "user-123" },
+        select: { id: true },
+      })
+      expect(mockPrisma.task.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ goalId: "g1" }),
+      })
+      // Task mutations revalidate /goals so derived goal progress stays fresh.
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/goals")
     })
   })
 
