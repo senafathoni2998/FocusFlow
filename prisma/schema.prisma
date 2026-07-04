@@ -21,6 +21,7 @@ model User {
   recurrenceRules RecurrenceRule[]
   habits     Habit[]
   goals      Goal[]
+  reminders  Reminder[]
 }
 
 model Habit {
@@ -79,6 +80,20 @@ model Goal {
   tasks Task[]
 
   @@index([userId, status])
+}
+
+model Reminder {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId       String
+  task         Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  triggerAt    DateTime // absolute instant the reminder should fire
+  dispatchedAt DateTime? // set once a dispatcher has surfaced it (store-only: unused for now)
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, triggerAt])
+  @@index([taskId])
 }
 
 model RecurrenceRule {
@@ -180,6 +195,9 @@ model Task {
   // "tasks"-progress goal derives its percent from its linked tasks.
   goalId String?
   goal   Goal?   @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  // Reminders (store-only): absolute trigger times a future dispatcher consumes.
+  reminders Reminder[]
 
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

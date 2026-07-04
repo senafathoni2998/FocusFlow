@@ -272,6 +272,30 @@ describe("Task Actions", () => {
       // Task mutations revalidate /goals so derived goal progress stays fresh.
       expect(mockRevalidatePath).toHaveBeenCalledWith("/goals")
     })
+
+    it("creates nested reminders from datetime strings (dropping invalid ones)", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.create.mockResolvedValue({ id: "task-1" } as any)
+      await createTask({ title: "T", reminders: ["2026-07-10T14:30", "not-a-date"] })
+      const data = (mockPrisma.task.create as jest.Mock).mock.calls[0][0].data
+      expect(data.reminders.create).toHaveLength(1)
+      expect(data.reminders.create[0].triggerAt).toBeInstanceOf(Date)
+      expect(data.reminders.create[0].userId).toBe("user-123")
+    })
+
+    it("omits reminders entirely when none are valid", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.create.mockResolvedValue({ id: "task-1" } as any)
+      await createTask({ title: "T", reminders: ["nope"] })
+      expect((mockPrisma.task.create as jest.Mock).mock.calls[0][0].data.reminders).toBeUndefined()
+    })
+
+    it("dedupes reminders that resolve to the same instant", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.create.mockResolvedValue({ id: "task-1" } as any)
+      await createTask({ title: "T", reminders: ["2026-07-10T14:30", "2026-07-10T14:30:00"] })
+      expect((mockPrisma.task.create as jest.Mock).mock.calls[0][0].data.reminders.create).toHaveLength(1)
+    })
   })
 
   describe("updateTask", () => {
@@ -281,6 +305,17 @@ describe("Task Actions", () => {
       const result = await updateTask("task-1", { title: "Updated" })
 
       expect(result).toEqual({ error: "Unauthorized" })
+    })
+
+    it("replaces the full reminder set", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({ id: "task-1", userId: "user-123" })
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+      await updateTask("task-1", { reminders: ["2026-07-10T14:30"] })
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data.reminders.deleteMany).toEqual({})
+      expect(data.reminders.create).toHaveLength(1)
+      expect(data.reminders.create[0].userId).toBe("user-123")
     })
 
     it("should return error when task not found", async () => {
@@ -590,7 +625,11 @@ describe("Task Actions", () => {
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: { userId: "user-123" },
         orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-        include: { tags: { include: { tag: true } }, recurrence: true }
+        include: {
+          tags: { include: { tag: true } },
+          recurrence: true,
+          reminders: { select: { id: true, triggerAt: true }, orderBy: { triggerAt: "asc" } },
+        }
       })
       expect(result).toEqual(tasks)
     })
@@ -607,7 +646,11 @@ describe("Task Actions", () => {
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: { userId: "custom-user" },
         orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-        include: { tags: { include: { tag: true } }, recurrence: true }
+        include: {
+          tags: { include: { tag: true } },
+          recurrence: true,
+          reminders: { select: { id: true, triggerAt: true }, orderBy: { triggerAt: "asc" } },
+        }
       })
       expect(result).toEqual(tasks)
     })

@@ -33,6 +33,13 @@ export interface Task {
   goalId?: string | null
   tags?: TagSummary[]
   recurrence?: RecurrenceSummary | null
+  reminders?: ReminderSummary[]
+}
+
+/** A task reminder's minimal shape (badge count, form list). */
+export interface ReminderSummary {
+  id: string
+  triggerAt: Date | string
 }
 
 /** Minimal recurrence shape the client UI needs (card badge, form dropdown). */

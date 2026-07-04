@@ -70,6 +70,30 @@ function tagCreateInput(tagNames: string[] | undefined, userId: string) {
   }))
 }
 
+/**
+ * Build nested Reminder create input from a list of datetime strings. A bare
+ * "YYYY-MM-DDTHH:mm" (from <input type="datetime-local">) parses as local time,
+ * which is the instant the user picked; full ISO strings are parsed as-is.
+ * Invalid values are dropped and the set is deduped + capped.
+ */
+const MAX_REMINDERS_PER_TASK = 20
+
+function reminderCreateInput(reminders: string[] | undefined, userId: string) {
+  // Parse, drop invalid, dedupe by the resolved instant (not the raw string), and
+  // stop at the cap — bounded work even if the (schema-capped) array is large.
+  const seen = new Set<number>()
+  const out: { triggerAt: Date; userId: string }[] = []
+  for (const s of reminders ?? []) {
+    const d = new Date(s)
+    const t = d.getTime()
+    if (isNaN(t) || seen.has(t)) continue
+    seen.add(t)
+    out.push({ triggerAt: d, userId })
+    if (out.length >= MAX_REMINDERS_PER_TASK) break
+  }
+  return out
+}
+
 const taskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -83,6 +107,7 @@ const taskSchema = z.object({
   listId: z.string().nullable().optional(),
   goalId: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
+  reminders: z.array(z.string()).max(100).optional(),
   recurrence: z.enum(["daily", "weekly", "monthly", "yearly"]).nullable().optional(),
 })
 
@@ -99,6 +124,7 @@ export async function createTask(data: {
   listId?: string | null
   goalId?: string | null
   tags?: string[]
+  reminders?: string[]
   recurrence?: string | null
 }) {
   const session = await auth()
@@ -121,6 +147,7 @@ export async function createTask(data: {
       listId: data.listId,
       goalId: data.goalId,
       tags: data.tags,
+      reminders: data.reminders,
       recurrence: data.recurrence,
     })
 
@@ -166,6 +193,7 @@ export async function createTask(data: {
     })
     const nextOrder = (maxOrder._max.order ?? 0) + 10
     const tagInput = tagCreateInput(validated.tags, session.user.id)
+    const reminderInput = reminderCreateInput(validated.reminders, session.user.id)
 
     // Create the recurrence rule up front (if any) and link it by scalar id, so
     // the Task create stays in Prisma's "unchecked" (scalar FK) form.
@@ -199,6 +227,7 @@ export async function createTask(data: {
         order: nextOrder,
         recurrenceId,
         ...(tagInput.length ? { tags: { create: tagInput } } : {}),
+        ...(reminderInput.length ? { reminders: { create: reminderInput } } : {}),
         userId: session.user.id,
       },
     })
@@ -232,6 +261,7 @@ export async function updateTask(
     listId?: string | null
     goalId?: string | null
     tags?: string[]
+    reminders?: string[]
     recurrence?: string | null
   }
 ) {
@@ -343,6 +373,14 @@ export async function updateTask(
       updateData.tags = {
         deleteMany: {},
         create: tagCreateInput(data.tags, session.user.id),
+      }
+    }
+
+    if (data.reminders !== undefined) {
+      // Replace the full reminder set: clear existing, then recreate.
+      updateData.reminders = {
+        deleteMany: {},
+        create: reminderCreateInput(data.reminders, session.user.id),
       }
     }
 
@@ -510,7 +548,11 @@ export async function getTasks(userId?: string) {
     const tasks = await prisma.task.findMany({
       where: { userId: targetUserId },
       orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-      include: { tags: { include: { tag: true } }, recurrence: true },
+      include: {
+        tags: { include: { tag: true } },
+        recurrence: true,
+        reminders: { select: { id: true, triggerAt: true }, orderBy: { triggerAt: "asc" } },
+      },
     })
 
     // Flatten TaskTag[] -> the tag rows for the client.

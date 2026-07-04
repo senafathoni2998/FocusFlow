@@ -5,6 +5,7 @@ import { createTask } from "@/app/actions/tasks"
 import type { ListSummary } from "@/types/task"
 import type { GoalOption } from "@/types/goal"
 import { RECURRENCE_FREQS, RECURRENCE_LABELS } from "@/lib/recurrence"
+import TaskReminderFields from "./TaskReminderFields"
 
 // Helper function to insert markdown around selected text
 const insertMarkdown = (
@@ -53,6 +54,7 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
   const [goalId, setGoalId] = useState("")
   const [tags, setTags] = useState("")
   const [recurrence, setRecurrence] = useState("")
+  const [reminders, setReminders] = useState<string[]>([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
@@ -86,6 +88,7 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
       listId: listId || undefined,
       goalId: goalId || undefined,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      reminders,
       recurrence: recurrence || null,
     })
 
@@ -101,6 +104,7 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
       setGoalId("")
       setTags("")
       setRecurrence("")
+      setReminders([])
       setLoading(false)
       onClose?.()
     }
@@ -249,6 +253,8 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
           ))}
         </select>
       </div>
+
+      <TaskReminderFields reminders={reminders} onChange={setReminders} />
 
       <div className="flex gap-3 pt-4">
         <button

@@ -166,6 +166,14 @@ export default function TaskCard({ task, subtasks, onUpdate }: TaskCardProps) {
               🔁 {RECURRENCE_LABELS[task.recurrence.freq as RecurrenceFreq] ?? "Repeats"}
             </span>
           )}
+          {task.reminders && task.reminders.length > 0 && (
+            <span
+              className="text-xs px-2 py-1 rounded-full bg-warning-50 text-warning-700"
+              title={`${task.reminders.length} reminder${task.reminders.length > 1 ? "s" : ""}`}
+            >
+              🔔 {task.reminders.length}
+            </span>
+          )}
         </div>
 
         <div className="flex gap-3">

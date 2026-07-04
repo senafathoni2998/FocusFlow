@@ -276,6 +276,7 @@ describe("EditTaskForm Component", () => {
           listId: null,
           goalId: null,
           tags: [],
+          reminders: [],
           recurrence: null,
         })
       })
@@ -351,6 +352,7 @@ describe("EditTaskForm Component", () => {
           listId: null,
           goalId: null,
           tags: [],
+          reminders: [],
           recurrence: null,
         })
       })

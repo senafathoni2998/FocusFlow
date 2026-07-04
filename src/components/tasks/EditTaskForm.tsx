@@ -4,9 +4,10 @@ import { useState, useRef, useEffect } from "react"
 import { updateTask, createTask, deleteTask } from "@/app/actions/tasks"
 import { getLists } from "@/app/actions/lists"
 import { getGoalOptions } from "@/app/actions/goals"
-import type { ListSummary, Task, TagSummary, RecurrenceSummary } from "@/types/task"
+import type { ListSummary, Task, TagSummary, RecurrenceSummary, ReminderSummary } from "@/types/task"
 import type { GoalOption } from "@/types/goal"
 import { RECURRENCE_FREQS, RECURRENCE_LABELS } from "@/lib/recurrence"
+import TaskReminderFields from "./TaskReminderFields"
 
 // Helper function to insert markdown around selected text
 const insertMarkdown = (
@@ -50,6 +51,7 @@ interface EditTaskFormProps {
     goalId?: string | null
     tags?: TagSummary[]
     recurrence?: RecurrenceSummary | null
+    reminders?: ReminderSummary[]
   }
   subtasks?: Task[]
   onClose?: () => void
@@ -67,6 +69,13 @@ const toDateInputValue = (date: Date | string): string => {
   return `${y}-${m}-${day}`
 }
 
+// Stored reminder instant -> local "YYYY-MM-DDTHH:mm" for <input type="datetime-local">.
+const toDateTimeLocal = (date: Date | string): string => {
+  const d = new Date(date)
+  const p = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: EditTaskFormProps) {
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description || "")
@@ -78,6 +87,9 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
   const [goalId, setGoalId] = useState(task.goalId ?? "")
   const [tags, setTags] = useState((task.tags ?? []).map((t) => t.name).join(", "))
   const [recurrence, setRecurrence] = useState(task.recurrence?.freq ?? "")
+  const [reminders, setReminders] = useState<string[]>(
+    (task.reminders ?? []).map((r) => toDateTimeLocal(r.triggerAt))
+  )
   const [lists, setLists] = useState<ListSummary[]>([])
   const [goals, setGoals] = useState<GoalOption[]>([])
   const [error, setError] = useState("")
@@ -140,6 +152,7 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
       listId: listId || null,
       goalId: goalId || null,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      reminders,
       recurrence: recurrence || null,
     })
 
@@ -296,6 +309,8 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
           ))}
         </select>
       </div>
+
+      <TaskReminderFields reminders={reminders} onChange={setReminders} />
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">Subtasks</label>
