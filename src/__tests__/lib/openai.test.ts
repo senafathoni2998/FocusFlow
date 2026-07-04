@@ -28,7 +28,17 @@ describe("OpenAI Service", () => {
 
     // Remove API key to force default insights (more reliable testing)
     process.env = { ...originalEnv }
-    delete process.env.GROQ_API_KEY
+    // Force the "no provider configured" path by clearing every provider key.
+    for (const k of [
+      "GROQ_API_KEY",
+      "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "GEMINI_API_KEY",
+      "AI_PROVIDER",
+    ]) {
+      delete process.env[k]
+    }
 
     // Import fresh for each test
     const openaiModule = await import("@/lib/openai")
@@ -63,7 +73,7 @@ describe("OpenAI Service", () => {
 
       const result = await generateInsights(sessions, tasks)
 
-      expect(result.error).toBe("Groq API key not configured")
+      expect(result.error).toBe("AI provider not configured")
       expect(result.insights).toBeDefined()
       expect(Array.isArray(result.insights)).toBe(true)
     })
@@ -412,5 +422,31 @@ describe("OpenAI Service - degraded paths keep goal/habit nudges (API key set)",
 
     expect(result.insights.some((i: string) => i.includes("past their target date"))).toBe(true)
     expect(result.insights.some((i: string) => i.includes("habit streak"))).toBe(true)
+  })
+
+  it("calls the resolved provider's insights model and parses bullets on success", async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "1. Do A\n2. Do B\n3. Do C" } }],
+    })
+
+    const result = await generateInsights([], [])
+
+    // groq is the default configured provider here → its insights model.
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "llama-3.1-8b-instant" }),
+    )
+    expect(result.insights).toHaveLength(3)
+    expect(result.insights).toContain("Do B")
+  })
+
+  it("uses the chosen provider's insights model when a preference is passed", async () => {
+    process.env.OPENAI_API_KEY = "sk-openai"
+    mockCreate.mockResolvedValue({ choices: [{ message: { content: "1. X" } }] })
+
+    await generateInsights([], [], [], [], "openai")
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-4o-mini" }),
+    )
   })
 })

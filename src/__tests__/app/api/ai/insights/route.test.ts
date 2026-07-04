@@ -42,6 +42,9 @@ jest.mock("@/lib/prisma", () => ({
     habit: {
       findMany: jest.fn(),
     },
+    user: {
+      findUnique: jest.fn(),
+    },
   },
 }))
 
@@ -134,6 +137,7 @@ describe("AI Insights API Route", () => {
     // Default the new pillar fetches so the Promise.all always resolves.
     mockPrisma.goal.findMany.mockResolvedValue([])
     mockPrisma.habit.findMany.mockResolvedValue([])
+    mockPrisma.user.findUnique.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -300,6 +304,7 @@ describe("AI Insights API Route", () => {
       mockPrisma.task.findMany.mockResolvedValue(mockTasks)
       mockPrisma.goal.findMany.mockResolvedValue(mockGoals)
       mockPrisma.habit.findMany.mockResolvedValue(mockHabits)
+      mockPrisma.user.findUnique.mockResolvedValue({ aiProvider: "openai" })
       mockGenerateInsights.mockResolvedValue({
         insights: ["Keep up the good work!", "Focus on high priority tasks"],
         error: null
@@ -307,11 +312,13 @@ describe("AI Insights API Route", () => {
 
       await GET()
 
+      // The user's stored provider preference is threaded through as the 5th arg.
       expect(mockGenerateInsights).toHaveBeenCalledWith(
         mockSessions,
         mockTasks,
         mockGoals,
         mockHabits,
+        "openai",
       )
     })
 
@@ -527,7 +534,7 @@ describe("AI Insights API Route", () => {
       const response = await GET()
 
       expect(response.status).toBe(200)
-      expect(mockGenerateInsights).toHaveBeenCalledWith(mixedSessions, [], [], [])
+      expect(mockGenerateInsights).toHaveBeenCalledWith(mixedSessions, [], [], [], null)
     })
 
     it("should handle tasks with various statuses", async () => {
@@ -547,7 +554,7 @@ describe("AI Insights API Route", () => {
       const response = await GET()
 
       expect(response.status).toBe(200)
-      expect(mockGenerateInsights).toHaveBeenCalledWith([], mixedTasks, [], [])
+      expect(mockGenerateInsights).toHaveBeenCalledWith([], mixedTasks, [], [], null)
     })
 
     it("should handle large number of sessions", async () => {

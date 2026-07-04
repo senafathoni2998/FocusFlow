@@ -52,7 +52,8 @@ export default function Navigation() {
     { href: "/tasks", label: "Tasks", icon: "📋" },
     { href: "/habits", label: "Habits", icon: "🔁" },
     { href: "/goals", label: "Goals", icon: "🎯" },
-    { href: "/timer", label: "Timer", icon: "⏱️" }
+    { href: "/timer", label: "Timer", icon: "⏱️" },
+    { href: "/settings", label: "Settings", icon: "⚙️" }
   ]
 
   const isActive = (href: string) => pathname === href

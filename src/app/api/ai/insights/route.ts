@@ -11,9 +11,10 @@ export async function GET() {
   }
 
   try {
-    // Fetch recent sessions, tasks, active goals, and habits (with recent
-    // check-ins) so the coach can reason across all pillars.
-    const [sessions, tasks, goals, habits] = await Promise.all([
+    // Fetch recent sessions, tasks, active goals, habits (with recent check-ins),
+    // and the user's AI-provider preference so the coach can reason across all
+    // pillars using the chosen provider.
+    const [sessions, tasks, goals, habits, user] = await Promise.all([
       prisma.focusSession.findMany({
         where: { userId: session.user.id },
         orderBy: { startTime: "desc" },
@@ -32,10 +33,14 @@ export async function GET() {
         // Match getHabits' window (habits.ts): computeHabitStats walks back up to
         // 366*3 days for the current streak, so a shorter cap would undercount it.
         include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } }
+      }),
+      prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { aiProvider: true }
       })
     ])
 
-    const result = await generateInsights(sessions, tasks, goals, habits)
+    const result = await generateInsights(sessions, tasks, goals, habits, user?.aiProvider ?? null)
 
     return NextResponse.json(result)
   } catch (error) {

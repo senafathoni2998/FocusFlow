@@ -21,16 +21,16 @@ import {
   deleteHabit,
 } from "@/app/actions/habits";
 import { getDueReminders } from "@/app/actions/reminders";
+import { getUserAIProviderPref } from "@/app/actions/settings";
+import { getAIClient } from "@/lib/aiProviders";
 import { computeHabitStats } from "@/lib/habitStats";
 import { goalPercent } from "@/lib/goalStats";
 import type { Goal } from "@/types/goal";
 import type { Habit } from "@/types/habit";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY || "",
-  baseURL: "https://api.groq.com/openai/v1",
-});
+// The AI client is resolved per-request from the user's chosen provider
+// (getAIClient), so there's no module-level client anymore.
 
 // Function calling schema for task operations
 const functions = [
@@ -311,6 +311,13 @@ const functions = [
   },
 ];
 
+// Wrap the function definitions in the modern `tools` shape. Unlike the legacy
+// `functions`/`function_call` params, `tools`/`tool_calls` is accepted by every
+// provider's OpenAI-compatible endpoint (OpenAI, Groq, DeepSeek, Gemini, Claude).
+const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = functions.map(
+  (fn) => ({ type: "function", function: fn }),
+);
+
 // Format a Date as YYYY-MM-DD in the server's local time — the same basis
 // createTask uses to store all-day dates, so displayed/parsed dates stay aligned.
 function formatLocalDate(d: Date): string {
@@ -417,11 +424,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!process.env.GROQ_API_KEY) {
+    // Resolve the AI client from the user's chosen provider (falling back to the
+    // AI_PROVIDER env / groq default). Null means no provider has an API key set.
+    const providerPref = await getUserAIProviderPref();
+    const ai = getAIClient(providerPref);
+    if (!ai) {
       return NextResponse.json(
         {
           error: "AI service not configured",
-          message: "Please contact the administrator to set up the AI service.",
+          message:
+            "No AI provider is configured. Add an API key for a provider and pick it in Settings.",
         },
         { status: 500 },
       );
@@ -495,14 +507,20 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
     const todayISO = formatLocalDate(now);
     const dateContext = `Today is ${todayHuman} (ISO: ${todayISO}). When the user gives a relative date such as "today", "tomorrow", "next friday", "this month", "next month", or "in 2 weeks", resolve it against today's date and always pass dueDate to functions in ISO 8601 format (YYYY-MM-DD).`;
 
-    // Build messages array
+    // Build messages array. Everything the model needs up front (instructions,
+    // date grounding, and the current user context) goes into a SINGLE system
+    // message so the conversation is system → user across every provider. Anthropic
+    // and Gemini's OpenAI-compat endpoints require the first non-system message to
+    // be a user turn (a leading assistant/second-system message 400s), so we must
+    // not emit the context as its own assistant message.
+    const systemContent = `${systemPrompt}
+
+${dateContext}
+
+Current user context:${taskContext}${goalContext}${habitContext}${reminderContext}`;
+
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: "system", content: systemPrompt },
-      { role: "system", content: dateContext },
-      {
-        role: "assistant",
-        content: `Current user context:${taskContext}${goalContext}${habitContext}${reminderContext}`,
-      },
+      { role: "system", content: systemContent },
       ...history.map((msg: { role: string; content: string }) => ({
         role: msg.role as "user" | "assistant",
         content: msg.content,
@@ -510,12 +528,12 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
       { role: "user", content: message },
     ];
 
-    // Call Groq API with function calling
-    const response = await openai.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+    // Call the provider with function/tool calling.
+    const response = await ai.client.chat.completions.create({
+      model: ai.chatModel,
       messages,
-      functions,
-      function_call: "auto",
+      tools,
+      tool_choice: "auto",
       temperature: 0.3,
       max_tokens: 1024,
     });
@@ -523,14 +541,14 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
     const choice = response.choices[0];
     const messageContent = choice.message?.content || "";
 
-    // Check if AI wants to call a function
-    if (choice.message?.function_call) {
-      const functionCall = choice.message.function_call;
-      const functionName = functionCall.name;
+    // Check if the model wants to call a tool (we handle a single tool call).
+    const toolCall = choice.message?.tool_calls?.[0];
+    if (toolCall) {
+      const functionName = toolCall.function.name;
       let functionArgs: Record<string, any> = {};
 
       try {
-        functionArgs = JSON.parse(functionCall.arguments || "{}");
+        functionArgs = JSON.parse(toolCall.function.arguments || "{}");
       } catch (e) {
         return NextResponse.json({
           message:
@@ -540,14 +558,23 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
 
       // Execute the function
       let result;
+      // Keep only the tool call we're handling on the assistant message: we return
+      // exactly one tool result, and providers reject a follow-up where an
+      // assistant message has tool_calls without a matching result for each.
+      const assistantMsg: OpenAI.Chat.Completions.ChatCompletionMessageParam = {
+        ...choice.message,
+        role: "assistant",
+        tool_calls: [toolCall],
+      };
       let followUpMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-        [...messages, choice.message];
+        [...messages, assistantMsg];
 
-      // Append a function-result message the model can read on the follow-up call.
+      // Append a tool-result message (matched to this tool call by id) that the
+      // model reads on the follow-up call to compose its reply.
       const pushFunctionResult = (payload: Record<string, unknown>) => {
         followUpMessages.push({
-          role: "function",
-          name: functionName,
+          role: "tool",
+          tool_call_id: toolCall.id,
           content: JSON.stringify(payload),
         });
       };
@@ -555,19 +582,11 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
       switch (functionName) {
         case "createTask":
           result = await createTask(functionArgs as any);
-          if (result.error) {
-            followUpMessages.push({
-              role: "function",
-              name: functionName,
-              content: JSON.stringify({ error: result.error }),
-            });
-          } else {
-            followUpMessages.push({
-              role: "function",
-              name: functionName,
-              content: JSON.stringify({ success: true, task: result.task }),
-            });
-          }
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : { success: true, task: result.task },
+          );
           break;
 
         case "updateTask":
@@ -575,19 +594,11 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
             functionArgs.id as string,
             functionArgs as any,
           );
-          if (result.error) {
-            followUpMessages.push({
-              role: "function",
-              name: functionName,
-              content: JSON.stringify({ error: result.error }),
-            });
-          } else {
-            followUpMessages.push({
-              role: "function",
-              name: functionName,
-              content: JSON.stringify({ success: true, task: result.task }),
-            });
-          }
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : { success: true, task: result.task },
+          );
           break;
 
         case "deleteTask":
@@ -597,31 +608,19 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
           );
           result = await deleteTask(functionArgs.id as string);
           console.log("[Chat API] Delete result:", result);
-          if (result.error) {
-            followUpMessages.push({
-              role: "function",
-              name: functionName,
-              content: JSON.stringify({ error: result.error }),
-            });
-          } else {
-            followUpMessages.push({
-              role: "function",
-              name: functionName,
-              content: JSON.stringify({
-                success: true,
-                message: "Task deleted successfully",
-              }),
-            });
-          }
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : {
+                  success: true,
+                  message: "Task deleted successfully",
+                },
+          );
           break;
 
         case "listTasks":
           const tasks = await getTasks(session.user.id);
-          followUpMessages.push({
-            role: "function",
-            name: functionName,
-            content: JSON.stringify({ tasks }),
-          });
+          pushFunctionResult({ tasks });
           break;
 
         // ---- Goals ----
@@ -752,9 +751,9 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
           });
       }
 
-      // Get final response from AI with function results
-      const finalResponse = await openai.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
+      // Get final response from the provider with the tool results.
+      const finalResponse = await ai.client.chat.completions.create({
+        model: ai.chatModel,
         messages: followUpMessages,
         temperature: 0.3,
         max_tokens: 1024,

@@ -1,12 +1,9 @@
-import OpenAI from 'openai'
 import { computeHabitStats } from '@/lib/habitStats'
+import { getAIClient } from '@/lib/aiProviders'
 import type { Habit } from '@/types/habit'
 
-// Using Groq for fast, free AI inference
-const openai = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY || "",
-  baseURL: "https://api.groq.com/openai/v1"
-})
+// The AI client is resolved per-call from the user's chosen provider (getAIClient),
+// so there is no module-level client here.
 
 /**
  * Count goals whose calendar-day deadline has passed and aren't achieved yet.
@@ -31,10 +28,12 @@ export async function generateInsights(
   userTasks: any[],
   userGoals: any[] = [],
   userHabits: any[] = [],
+  providerPref?: string | null,
 ) {
-  if (!process.env.GROQ_API_KEY) {
+  const ai = getAIClient(providerPref)
+  if (!ai) {
     return {
-      error: "Groq API key not configured",
+      error: "AI provider not configured",
       insights: getDefaultInsights(userSessions, userTasks, userGoals, userHabits)
     }
   }
@@ -88,9 +87,8 @@ Habits: ${JSON.stringify(userHabits.slice(0, 5).map(h => {
 
 Provide 3-5 specific, actionable recommendations to improve productivity.`
 
-    // Using Llama 3.1 8B on Groq - extremely fast and free
-    const response = await openai.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+    const response = await ai.client.chat.completions.create({
+      model: ai.insightsModel,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }

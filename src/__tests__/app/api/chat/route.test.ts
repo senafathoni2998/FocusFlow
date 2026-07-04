@@ -106,6 +106,12 @@ jest.mock("@/app/actions/reminders", () => ({
   getDueReminders: (...args: any[]) => mockGetDueReminders(...args),
 }))
 
+// Mock settings (provider preference lookup). Null => resolve via env/groq default.
+const mockGetUserAIProviderPref = jest.fn()
+jest.mock("@/app/actions/settings", () => ({
+  getUserAIProviderPref: (...args: any[]) => mockGetUserAIProviderPref(...args),
+}))
+
 // Mock auth
 const mockAuth = jest.fn()
 jest.mock("@/lib/auth", () => ({
@@ -125,13 +131,27 @@ const createRequest = async (body: any): Promise<any> => {
 describe("Chat API Route", () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    // Set default environment variable
+    // Deterministic provider resolution: groq is the only configured provider, so
+    // clear any other provider env that the real .env / shell might have set.
+    for (const k of [
+      "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "GEMINI_API_KEY",
+      "AI_PROVIDER",
+      "GROQ_MODEL",
+      "OPENAI_MODEL",
+    ]) {
+      delete process.env[k]
+    }
     process.env.GROQ_API_KEY = "test-api-key"
     // The route fetches all four pillars for context on every request — default
     // the new pillar getters so the Promise.all always resolves cleanly.
     mockGetGoals.mockResolvedValue([])
     mockGetHabits.mockResolvedValue([])
     mockGetDueReminders.mockResolvedValue([])
+    // No stored provider preference by default → resolves to the groq default.
+    mockGetUserAIProviderPref.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -299,8 +319,17 @@ describe("Chat API Route", () => {
       })
     })
 
-    it("should return 500 when GROQ_API_KEY is not set", async () => {
-      delete process.env.GROQ_API_KEY
+    it("should return 500 when no AI provider is configured", async () => {
+      // Clear every provider key so no provider resolves.
+      for (const k of [
+        "GROQ_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "GEMINI_API_KEY",
+      ]) {
+        delete process.env[k]
+      }
 
       const request = await createRequest({
         message: "Hello",
@@ -311,7 +340,7 @@ describe("Chat API Route", () => {
 
       expect(response.status).toBe(500)
       expect(data.error).toBe("AI service not configured")
-      expect(data.message).toContain("contact the administrator")
+      expect(data.message).toContain("No AI provider is configured")
     })
   })
 
@@ -336,14 +365,14 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "createTask",
                 arguments: JSON.stringify({
                   title: "New Task",
                   description: "Test description",
                   priority: "high",
                 }),
-              },
+              } }],
             },
           }],
         })
@@ -378,10 +407,10 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "createTask",
                 arguments: JSON.stringify({ title: "New Task" }),
-              },
+              } }],
             },
           }],
         })
@@ -436,14 +465,14 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "updateTask",
                 arguments: JSON.stringify({
                   id: "task-123",
                   status: "completed",
                   priority: "high",
                 }),
-              },
+              } }],
             },
           }],
         })
@@ -477,13 +506,13 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "updateTask",
                 arguments: JSON.stringify({
                   id: "task-123",
                   status: "completed",
                 }),
-              },
+              } }],
             },
           }],
         })
@@ -523,10 +552,10 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "deleteTask",
                 arguments: JSON.stringify({ id: "task-123" }),
-              },
+              } }],
             },
           }],
         })
@@ -556,10 +585,10 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "deleteTask",
                 arguments: JSON.stringify({ id: "task-123" }),
-              },
+              } }],
             },
           }],
         })
@@ -605,10 +634,10 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "listTasks",
                 arguments: "{}",
-              },
+              } }],
             },
           }],
         })
@@ -644,10 +673,10 @@ describe("Chat API Route", () => {
         choices: [{
           message: {
             content: null,
-            function_call: {
+            tool_calls: [{ id: "call_1", type: "function", function: {
               name: "createTask",
               arguments: "invalid json{{{",
-            },
+            } }],
           },
         }],
       })
@@ -670,10 +699,10 @@ describe("Chat API Route", () => {
         choices: [{
           message: {
             content: null,
-            function_call: {
+            tool_calls: [{ id: "call_1", type: "function", function: {
               name: "unknownFunction",
               arguments: "{}",
-            },
+            } }],
           },
         }],
       })
@@ -747,10 +776,10 @@ describe("Chat API Route", () => {
           choices: [{
             message: {
               content: null,
-              function_call: {
+              tool_calls: [{ id: "call_1", type: "function", function: {
                 name: "listTasks",
                 arguments: "{}",
-              },
+              } }],
             },
           }],
         })
@@ -800,7 +829,7 @@ describe("Chat API Route", () => {
 
       const messages = calls[0][0].messages
       const contextMessage = messages.find(
-        (m: any) => m.role === "assistant" && m.content.includes("USER'S EXISTING TASKS")
+        (m: any) => m.role === "system" && m.content.includes("USER'S EXISTING TASKS")
       )
 
       expect(contextMessage).toBeDefined()
@@ -831,7 +860,7 @@ describe("Chat API Route", () => {
       const calls = mockChatCreate.mock.calls
       const messages = calls[0][0].messages
       const contextMessage = messages.find(
-        (m: any) => m.role === "assistant" && m.content.includes("USER'S EXISTING TASKS")
+        (m: any) => m.role === "system" && m.content.includes("USER'S EXISTING TASKS")
       )
 
       expect(contextMessage.content).toContain("and 5 more tasks")
@@ -853,7 +882,7 @@ describe("Chat API Route", () => {
       const calls = mockChatCreate.mock.calls
       const messages = calls[0][0].messages
       const contextMessage = messages.find(
-        (m: any) => m.role === "assistant" && m.content.includes("no tasks yet")
+        (m: any) => m.role === "system" && m.content.includes("no tasks yet")
       )
 
       expect(contextMessage).toBeDefined()
@@ -910,7 +939,7 @@ describe("Chat API Route", () => {
     mockChatCreate
       .mockResolvedValueOnce({
         choices: [{
-          message: { content: null, function_call: { name, arguments: JSON.stringify(args) } },
+          message: { content: null, tool_calls: [{ id: "call_1", type: "function", function: { name, arguments: JSON.stringify(args) } }] },
         }],
       })
       .mockResolvedValueOnce({
@@ -947,8 +976,8 @@ describe("Chat API Route", () => {
       // The action result must be marshaled back into the follow-up completion
       // as a function message the model reads to compose its reply.
       const followUp = mockChatCreate.mock.calls[1][0].messages
-      const fnMsg = followUp.find((m: any) => m.role === "function")
-      expect(fnMsg?.name).toBe("createGoal")
+      const fnMsg = followUp.find((m: any) => m.role === "tool")
+      expect(fnMsg?.tool_call_id).toBe("call_1")
       expect(JSON.parse(fnMsg.content)).toEqual({ success: true, goal })
     })
 
@@ -1051,8 +1080,8 @@ describe("Chat API Route", () => {
       expect(data.functionCall?.result?.success).toBe(true)
 
       const followUp = mockChatCreate.mock.calls[1][0].messages
-      const fnMsg = followUp.find((m: any) => m.role === "function")
-      expect(fnMsg?.name).toBe("checkInHabit")
+      const fnMsg = followUp.find((m: any) => m.role === "tool")
+      expect(fnMsg?.tool_call_id).toBe("call_1")
       expect(JSON.parse(fnMsg.content)).toEqual({ success: true })
     })
 
@@ -1104,8 +1133,8 @@ describe("Chat API Route", () => {
       ])
 
       const followUp = mockChatCreate.mock.calls[1][0].messages
-      const fnMsg = followUp.find((m: any) => m.role === "function")
-      expect(fnMsg?.name).toBe("listDueReminders")
+      const fnMsg = followUp.find((m: any) => m.role === "tool")
+      expect(fnMsg?.tool_call_id).toBe("call_1")
       expect(JSON.parse(fnMsg.content).reminders).toHaveLength(1)
     })
   })
@@ -1119,7 +1148,7 @@ describe("Chat API Route", () => {
     const contextMessage = () => {
       const messages = mockChatCreate.mock.calls[0][0].messages
       return messages.find(
-        (m: any) => m.role === "assistant" && typeof m.content === "string" && m.content.startsWith("Current user context:"),
+        (m: any) => m.role === "system" && typeof m.content === "string" && m.content.includes("Current user context:"),
       )
     }
 
@@ -1189,6 +1218,102 @@ describe("Chat API Route", () => {
       expect(ctx.content).not.toContain("USER'S GOALS")
       expect(ctx.content).not.toContain("USER'S HABITS")
       expect(ctx.content).not.toContain("DUE REMINDERS")
+    })
+  })
+
+  describe("Provider + tools request shape", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([])
+    })
+
+    it("sends the modern tools/tool_choice params, not legacy functions", async () => {
+      mockChatCreate.mockResolvedValue({ choices: [{ message: { content: "hi" } }] })
+
+      await POST(await createRequest({ message: "hi" }))
+
+      const firstCall = mockChatCreate.mock.calls[0][0]
+      expect(firstCall.tool_choice).toBe("auto")
+      expect(Array.isArray(firstCall.tools)).toBe(true)
+      expect(firstCall.tools[0]).toEqual(
+        expect.objectContaining({
+          type: "function",
+          function: expect.objectContaining({ name: expect.any(String) }),
+        }),
+      )
+      expect(firstCall).not.toHaveProperty("functions")
+      expect(firstCall).not.toHaveProperty("function_call")
+    })
+
+    it("uses the model of the user's chosen provider", async () => {
+      mockGetUserAIProviderPref.mockResolvedValue("openai")
+      process.env.OPENAI_API_KEY = "sk-openai"
+      mockChatCreate.mockResolvedValue({ choices: [{ message: { content: "hi" } }] })
+
+      await POST(await createRequest({ message: "hi" }))
+
+      expect(mockChatCreate.mock.calls[0][0].model).toBe("gpt-4o-mini")
+    })
+
+    it("returns 500 when the resolved provider has no key even if a preference is stored", async () => {
+      mockGetUserAIProviderPref.mockResolvedValue("openai") // stored but no OPENAI key
+      delete process.env.GROQ_API_KEY // and no fallback either
+
+      const response = await POST(await createRequest({ message: "hi" }))
+      const data = await response.json()
+
+      expect(response.status).toBe(500)
+      expect(data.error).toBe("AI service not configured")
+    })
+
+    it("places the trimmed assistant tool_calls message right before the tool result", async () => {
+      mockCreateGoal.mockResolvedValue({ success: true, goal: { id: "g1" } })
+      mockFunctionCall("createGoal", { title: "X" })
+
+      await POST(await createRequest({ message: "make a goal" }))
+
+      const followUp = mockChatCreate.mock.calls[1][0].messages
+      const asstIdx = followUp.findIndex(
+        (m: any) => m.role === "assistant" && Array.isArray(m.tool_calls),
+      )
+      const toolIdx = followUp.findIndex((m: any) => m.role === "tool")
+      expect(asstIdx).toBeGreaterThanOrEqual(0)
+      expect(followUp[asstIdx].tool_calls).toHaveLength(1)
+      expect(followUp[asstIdx].tool_calls[0].id).toBe("call_1")
+      // the assistant tool_calls message immediately precedes its tool result
+      expect(toolIdx).toBe(asstIdx + 1)
+    })
+
+    it("handles only the first tool call when the model returns several", async () => {
+      mockCreateGoal.mockResolvedValue({ success: true, goal: { id: "g1" } })
+      mockChatCreate
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [
+                { id: "call_1", type: "function", function: { name: "createGoal", arguments: JSON.stringify({ title: "A" }) } },
+                { id: "call_2", type: "function", function: { name: "createHabit", arguments: JSON.stringify({ name: "B" }) } },
+              ],
+            },
+          }],
+        })
+        .mockResolvedValueOnce({ choices: [{ message: { content: "done" } }] })
+
+      const response = await POST(await createRequest({ message: "do two things" }))
+      const data = await response.json()
+
+      // Only the first tool call runs; the assistant message is trimmed to one.
+      expect(mockCreateGoal).toHaveBeenCalledTimes(1)
+      expect(mockCreateHabit).not.toHaveBeenCalled()
+      expect(data.functionCall?.name).toBe("createGoal")
+
+      const followUp = mockChatCreate.mock.calls[1][0].messages
+      const asst = followUp.find((m: any) => m.role === "assistant" && Array.isArray(m.tool_calls))
+      expect(asst.tool_calls).toHaveLength(1)
+      const toolMsgs = followUp.filter((m: any) => m.role === "tool")
+      expect(toolMsgs).toHaveLength(1)
+      expect(toolMsgs[0].tool_call_id).toBe("call_1")
     })
   })
 })
