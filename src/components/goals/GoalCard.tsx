@@ -117,6 +117,14 @@ export default function GoalCard({ goal, onAdjust, onSetStatus, onEdit, onDelete
         <button type="button" onClick={onEdit} className="text-primary-600 hover:text-primary-800">
           Edit
         </button>
+        <button
+          type="button"
+          onClick={() => onSetStatus("archived")}
+          disabled={busy}
+          className="text-gray-500 hover:text-gray-700 disabled:opacity-50"
+        >
+          Archive
+        </button>
         <button type="button" onClick={onDelete} className="text-danger-600 hover:text-danger-800">
           Delete
         </button>

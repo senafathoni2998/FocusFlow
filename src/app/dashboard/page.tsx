@@ -4,6 +4,8 @@ import { headers } from "next/headers"
 import StatsCards from "@/components/dashboard/StatsCards"
 import Charts from "@/components/dashboard/Charts"
 import AIInsights from "@/components/dashboard/AIInsights"
+import GoalsWidget from "@/components/dashboard/GoalsWidget"
+import { getGoals } from "@/app/actions/goals"
 
 async function getAnalytics() {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
@@ -36,7 +38,7 @@ export default async function DashboardPage() {
     redirect("/auth/signin")
   }
 
-  const analytics = await getAnalytics()
+  const [analytics, goals] = await Promise.all([getAnalytics(), getGoals()])
 
   const defaultData = {
     dailyData: [],
@@ -70,8 +72,9 @@ export default async function DashboardPage() {
             />
           </div>
 
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 space-y-6">
             <AIInsights />
+            <GoalsWidget goals={goals} />
           </div>
         </div>
       </div>

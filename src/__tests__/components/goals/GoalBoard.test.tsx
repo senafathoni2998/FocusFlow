@@ -9,6 +9,7 @@ jest.mock("@/app/actions/goals", () => ({
   adjustGoalProgress: jest.fn().mockResolvedValue({ success: true }),
   setGoalStatus: jest.fn().mockResolvedValue({ success: true }),
   deleteGoal: jest.fn().mockResolvedValue({ success: true }),
+  getArchivedGoals: jest.fn().mockResolvedValue([]),
 }))
 jest.mock("@/components/goals/GoalForm", () => {
   return function MockForm({ onClose }: any) {
@@ -51,7 +52,7 @@ describe("GoalBoard", () => {
 
   it("shows an empty state with no goals", () => {
     render(<GoalBoard goals={[]} />)
-    expect(screen.getByText(/No goals yet/)).toBeInTheDocument()
+    expect(screen.getByText(/No active goals/)).toBeInTheDocument()
   })
 
   it("renders a card per goal", () => {
@@ -84,5 +85,31 @@ describe("GoalBoard", () => {
     render(<GoalBoard goals={[]} />)
     await userEvent.click(screen.getByRole("button", { name: "+ New Goal" }))
     expect(screen.getByTestId("goal-form")).toBeInTheDocument()
+  })
+
+  it("archiving a goal calls setGoalStatus(archived)", async () => {
+    const { setGoalStatus } = require("@/app/actions/goals")
+    render(<GoalBoard goals={[mkGoal({ id: "g1", title: "Read" })]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }))
+    expect(setGoalStatus).toHaveBeenCalledWith("g1", "archived")
+  })
+
+  it("Show archived fetches and lists archived goals with Restore", async () => {
+    const { getArchivedGoals } = require("@/app/actions/goals")
+    getArchivedGoals.mockResolvedValueOnce([mkGoal({ id: "a1", title: "Old goal", status: "archived" })])
+    render(<GoalBoard goals={[]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Show archived" }))
+    expect(await screen.findByText("Old goal")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument()
+  })
+
+  it("restoring an archived goal calls setGoalStatus(active)", async () => {
+    const { getArchivedGoals, setGoalStatus } = require("@/app/actions/goals")
+    getArchivedGoals.mockResolvedValueOnce([mkGoal({ id: "a1", title: "Old goal", status: "archived" })])
+    render(<GoalBoard goals={[]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Show archived" }))
+    await screen.findByText("Old goal")
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }))
+    expect(setGoalStatus).toHaveBeenCalledWith("a1", "active")
   })
 })

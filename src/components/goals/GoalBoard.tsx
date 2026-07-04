@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { Goal } from "@/types/goal"
-import { adjustGoalProgress, setGoalStatus, deleteGoal } from "@/app/actions/goals"
+import { adjustGoalProgress, setGoalStatus, deleteGoal, getArchivedGoals } from "@/app/actions/goals"
+import { goalPercent } from "@/lib/goalStats"
 import GoalCard from "./GoalCard"
 import GoalForm from "./GoalForm"
 
@@ -20,8 +21,25 @@ export default function GoalBoard({ goals }: { goals: Goal[] }) {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Goal | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [archivedGoals, setArchivedGoals] = useState<Goal[]>([])
 
   useEffect(() => setLocalGoals(goals), [goals])
+
+  // Load the archived list when the section is open, and refresh it whenever the
+  // active goals change (e.g. a goal was just archived and dropped from `goals`).
+  // The `cancelled` guard drops a stale in-flight fetch so an out-of-order
+  // resolution can't clobber a newer optimistic update.
+  useEffect(() => {
+    if (!showArchived) return
+    let cancelled = false
+    getArchivedGoals().then((g) => {
+      if (!cancelled) setArchivedGoals(g as Goal[])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showArchived, goals])
 
   const handleAdjust = useCallback(
     (goalId: string, delta: number) => {
@@ -56,6 +74,27 @@ export default function GoalBoard({ goals }: { goals: Goal[] }) {
     (id: string) => {
       if (!window.confirm("Delete this goal?")) return
       setLocalGoals((prev) => prev.filter((g) => g.id !== id))
+      deleteGoal(id)
+        .then(() => router.refresh())
+        .catch(() => router.refresh())
+    },
+    [router]
+  )
+
+  const handleRestore = useCallback(
+    (id: string) => {
+      setArchivedGoals((prev) => prev.filter((g) => g.id !== id))
+      setGoalStatus(id, "active")
+        .then(() => router.refresh())
+        .catch(() => router.refresh())
+    },
+    [router]
+  )
+
+  const handleDeleteArchived = useCallback(
+    (id: string) => {
+      if (!window.confirm("Delete this goal?")) return
+      setArchivedGoals((prev) => prev.filter((g) => g.id !== id))
       deleteGoal(id)
         .then(() => router.refresh())
         .catch(() => router.refresh())
@@ -100,7 +139,7 @@ export default function GoalBoard({ goals }: { goals: Goal[] }) {
       </div>
 
       {localGoals.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">No goals yet. Set one to aim at.</div>
+        <div className="text-center py-16 text-gray-500">No active goals. Set one to aim at.</div>
       ) : (
         <div className="space-y-6">
           {active.length > 0 && <div className="space-y-2">{active.map(renderCard)}</div>}
@@ -112,6 +151,52 @@ export default function GoalBoard({ goals }: { goals: Goal[] }) {
           )}
         </div>
       )}
+
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={() => setShowArchived((s) => !s)}
+          className="text-sm text-gray-500 hover:text-gray-700"
+        >
+          {showArchived ? "Hide archived" : "Show archived"}
+        </button>
+
+        {showArchived &&
+          (archivedGoals.length === 0 ? (
+            <p className="text-sm text-gray-400 mt-2">No archived goals.</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {archivedGoals.map((g) => (
+                <div
+                  key={g.id}
+                  className="flex items-center gap-3 bg-gray-50 rounded-lg border border-gray-200 p-3"
+                >
+                  <span className="text-xl" aria-hidden="true">
+                    {g.icon}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-700 truncate">{g.title}</div>
+                    <div className="text-xs text-gray-400 tabular-nums">{goalPercent(g)}%</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRestore(g.id)}
+                    className="text-sm text-primary-600 hover:text-primary-800"
+                  >
+                    Restore
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteArchived(g.id)}
+                    className="text-sm text-danger-600 hover:text-danger-800"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          ))}
+      </div>
 
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">

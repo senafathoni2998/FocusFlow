@@ -53,6 +53,13 @@ describe("GoalCard", () => {
     expect(onSetStatus).toHaveBeenCalledWith("achieved")
   })
 
+  it("the Archive button archives the goal", async () => {
+    const onSetStatus = jest.fn()
+    render(<GoalCard goal={mk()} {...handlers} onSetStatus={onSetStatus} />)
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }))
+    expect(onSetStatus).toHaveBeenCalledWith("archived")
+  })
+
   it("an achieved goal shows the badge and can be reactivated", async () => {
     const onSetStatus = jest.fn()
     render(<GoalCard goal={mk({ status: "achieved" })} {...handlers} onSetStatus={onSetStatus} />)

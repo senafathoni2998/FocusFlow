@@ -68,6 +68,27 @@ describe("Goal Actions", () => {
     })
   })
 
+  describe("getArchivedGoals", () => {
+    it("returns the user's archived goals with derived counts", async () => {
+      const { getArchivedGoals } = require("@/app/actions/goals")
+      mockAuth.mockResolvedValue(session)
+      ;(mockPrisma.goal.findMany as jest.Mock).mockResolvedValue([
+        { id: "g1", tasks: [{ status: "completed", recurrenceId: null }] },
+      ])
+      const res = await getArchivedGoals()
+      expect(mockPrisma.goal.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: "u1", status: "archived" } })
+      )
+      expect(res).toEqual([{ id: "g1", taskTotal: 1, taskCompleted: 1 }])
+    })
+
+    it("returns [] without a session", async () => {
+      const { getArchivedGoals } = require("@/app/actions/goals")
+      mockAuth.mockResolvedValue(null)
+      expect(await getArchivedGoals()).toEqual([])
+    })
+  })
+
   describe("getGoalOptions", () => {
     it("returns lightweight active/achieved options", async () => {
       const { getGoalOptions } = require("@/app/actions/goals")

@@ -36,6 +36,24 @@ function toTargetDate(dateStr: string): Date {
   return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
 }
 
+/**
+ * Strip the raw linked-tasks array off a fetched goal and replace it with derived
+ * counts for "tasks"-progress goals: abandoned (wont-do) tasks drop out of the
+ * denominator, and recurring tasks are excluded entirely (they roll forward on
+ * completion and would otherwise cap the goal below 100% forever).
+ */
+function withTaskCounts<T extends { tasks?: { status: string; recurrenceId: string | null }[] }>(
+  goal: T
+) {
+  const { tasks, ...rest } = goal
+  const counted = (tasks ?? []).filter((t) => t.status !== "wont-do" && !t.recurrenceId)
+  return {
+    ...rest,
+    taskTotal: counted.length,
+    taskCompleted: counted.filter((t) => t.status === "completed").length,
+  }
+}
+
 export async function getGoals() {
   const session = await auth()
   const userId = session?.user?.id
@@ -47,19 +65,25 @@ export async function getGoals() {
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       include: { tasks: { select: { status: true, recurrenceId: true } } },
     })
+    return goals.map(withTaskCounts)
+  } catch {
+    return []
+  }
+}
 
-    // Derive linked-task counts for "tasks"-progress goals. Abandoned (wont-do)
-    // tasks drop out of the denominator so they don't drag the percent down, and
-    // recurring tasks are excluded entirely — they roll forward on completion and
-    // would otherwise cap the goal below 100% forever.
-    return goals.map(({ tasks, ...goal }) => {
-      const counted = (tasks ?? []).filter((t) => t.status !== "wont-do" && !t.recurrenceId)
-      return {
-        ...goal,
-        taskTotal: counted.length,
-        taskCompleted: counted.filter((t) => t.status === "completed").length,
-      }
+/** Archived goals (with derived task counts) for the "Show archived" section. */
+export async function getArchivedGoals() {
+  const session = await auth()
+  const userId = session?.user?.id
+  if (!userId) return []
+
+  try {
+    const goals = await prisma.goal.findMany({
+      where: { userId, status: "archived" },
+      orderBy: [{ updatedAt: "desc" }],
+      include: { tasks: { select: { status: true, recurrenceId: true } } },
     })
+    return goals.map(withTaskCounts)
   } catch {
     return []
   }
