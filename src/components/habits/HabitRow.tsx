@@ -16,10 +16,11 @@ interface HabitRowProps {
   onCheckIn: (delta: number) => void
   onEdit: () => void
   onDelete: () => void
+  onOpenDetail: () => void
   busy?: boolean
 }
 
-export default function HabitRow({ habit, onCheckIn, onEdit, onDelete, busy }: HabitRowProps) {
+export default function HabitRow({ habit, onCheckIn, onEdit, onDelete, onOpenDetail, busy }: HabitRowProps) {
   // "Today"-relative stats depend on the local clock, which the server (UTC)
   // can't know — compute them only after mount so SSR and hydration agree.
   const [mounted, setMounted] = useState(false)
@@ -42,7 +43,13 @@ export default function HabitRow({ habit, onCheckIn, onEdit, onDelete, busy }: H
       </span>
 
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-gray-900 truncate">{habit.name}</div>
+        <button
+          type="button"
+          onClick={onOpenDetail}
+          className="font-medium text-gray-900 truncate text-left hover:text-primary-700 hover:underline block max-w-full"
+        >
+          {habit.name}
+        </button>
         <div className="text-xs text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-0.5">
           <span className="tabular-nums">🔥 {currentStreak}d</span>
           {isAmount && (

@@ -15,7 +15,8 @@ function utcDayKey(d: Date | string): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`
 }
 
-function localDayKey(d: Date): string {
+/** Local calendar-day key for a walked day (used to look up amounts by day). */
+export function localDayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
@@ -46,7 +47,8 @@ export interface HabitStats {
   todayAmount: number
 }
 
-function amountsByDay(checkIns: HabitCheckInSummary[] | undefined): Map<string, number> {
+/** Sum check-in amounts per calendar day, keyed to match `localDayKey` lookups. */
+export function amountsByDay(checkIns: HabitCheckInSummary[] | undefined): Map<string, number> {
   const m = new Map<string, number>()
   for (const ci of checkIns ?? []) {
     const key = utcDayKey(ci.date)

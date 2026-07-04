@@ -6,6 +6,7 @@ import type { Habit } from "@/types/habit"
 import { checkInHabit, deleteHabit } from "@/app/actions/habits"
 import HabitRow from "./HabitRow"
 import HabitForm from "./HabitForm"
+import HabitDetail from "./HabitDetail"
 
 const utcKey = (d: Date | string) => {
   const dt = new Date(d)
@@ -23,8 +24,15 @@ export default function HabitBoard({ habits }: { habits: Habit[] }) {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Habit | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [detailHabit, setDetailHabit] = useState<Habit | null>(null)
 
   useEffect(() => setLocalHabits(habits), [habits])
+
+  // Keep an open detail panel's habit fresh (so its heatmap/stats reflect a
+  // check-in made behind it); close it if the habit is gone.
+  useEffect(() => {
+    setDetailHabit((cur) => (cur ? localHabits.find((h) => h.id === cur.id) ?? null : cur))
+  }, [localHabits])
 
   const handleCheckIn = useCallback(
     (habitId: string, delta: number) => {
@@ -105,6 +113,7 @@ export default function HabitBoard({ habits }: { habits: Habit[] }) {
                 setShowForm(true)
               }}
               onDelete={() => handleDelete(h.id)}
+              onOpenDetail={() => setDetailHabit(h)}
             />
           ))}
         </div>
@@ -124,6 +133,8 @@ export default function HabitBoard({ habits }: { habits: Habit[] }) {
           </div>
         </div>
       )}
+
+      {detailHabit && <HabitDetail habit={detailHabit} onClose={() => setDetailHabit(null)} />}
     </div>
   )
 }

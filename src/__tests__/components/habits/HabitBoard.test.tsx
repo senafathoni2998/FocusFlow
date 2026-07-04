@@ -18,6 +18,15 @@ jest.mock("@/components/habits/HabitForm", () => {
     )
   }
 })
+jest.mock("@/components/habits/HabitDetail", () => {
+  return function MockDetail({ habit, onClose }: any) {
+    return (
+      <div data-testid="habit-detail" data-habit-id={habit?.id}>
+        <button onClick={onClose}>Close detail</button>
+      </div>
+    )
+  }
+})
 
 import HabitBoard from "@/components/habits/HabitBoard"
 import type { Habit } from "@/types/habit"
@@ -78,5 +87,13 @@ describe("HabitBoard", () => {
     render(<HabitBoard habits={[]} />)
     await userEvent.click(screen.getByRole("button", { name: "+ New Habit" }))
     expect(screen.getByTestId("habit-form")).toBeInTheDocument()
+  })
+
+  it("clicking a habit name opens its detail panel", async () => {
+    render(<HabitBoard habits={[mkHabit({ id: "h1", name: "Read" })]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Read" }))
+    const detail = screen.getByTestId("habit-detail")
+    expect(detail).toBeInTheDocument()
+    expect(detail.getAttribute("data-habit-id")).toBe("h1")
   })
 })

@@ -66,9 +66,17 @@ jest.mock("@/components/dashboard/GoalsWidget", () => {
     return <div data-testid="goals-widget">GoalsWidget</div>
   }
 })
-// The dashboard now fetches goals for the widget.
+jest.mock("@/components/dashboard/HabitsWidget", () => {
+  return function MockHabitsWidget() {
+    return <div data-testid="habits-widget">HabitsWidget</div>
+  }
+})
+// The dashboard now fetches goals + habits for the widgets.
 jest.mock("@/app/actions/goals", () => ({
   getGoals: jest.fn().mockResolvedValue([]),
+}))
+jest.mock("@/app/actions/habits", () => ({
+  getHabits: jest.fn().mockResolvedValue([]),
 }))
 
 import { auth } from "@/lib/auth"
