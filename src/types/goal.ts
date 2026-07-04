@@ -27,6 +27,14 @@ export interface GoalOption {
   icon: string
 }
 
+/** A goal's linked task, as shown in the detail panel. */
+export interface GoalTask {
+  id: string
+  title: string
+  status: string
+  dueDate?: Date | string | null
+}
+
 export const GOAL_COLORS = ["primary", "success", "warning", "danger"] as const
 export type GoalColor = (typeof GOAL_COLORS)[number]
 

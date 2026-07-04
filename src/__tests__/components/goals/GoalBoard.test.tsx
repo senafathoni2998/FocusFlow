@@ -20,6 +20,15 @@ jest.mock("@/components/goals/GoalForm", () => {
     )
   }
 })
+jest.mock("@/components/goals/GoalDetail", () => {
+  return function MockDetail({ goal, onClose }: any) {
+    return (
+      <div data-testid="goal-detail" data-goal-id={goal?.id}>
+        <button onClick={onClose}>Close detail</button>
+      </div>
+    )
+  }
+})
 
 import GoalBoard from "@/components/goals/GoalBoard"
 import type { Goal } from "@/types/goal"
@@ -101,6 +110,14 @@ describe("GoalBoard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show archived" }))
     expect(await screen.findByText("Old goal")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument()
+  })
+
+  it("clicking a goal title opens its detail panel", async () => {
+    render(<GoalBoard goals={[mkGoal({ id: "g1", title: "Read" })]} />)
+    await userEvent.click(screen.getByRole("button", { name: "Read" }))
+    const detail = screen.getByTestId("goal-detail")
+    expect(detail).toBeInTheDocument()
+    expect(detail.getAttribute("data-goal-id")).toBe("g1")
   })
 
   it("restoring an archived goal calls setGoalStatus(active)", async () => {

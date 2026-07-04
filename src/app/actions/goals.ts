@@ -89,6 +89,27 @@ export async function getArchivedGoals() {
   }
 }
 
+/** The tasks linked to a goal (session-scoped by userId+goalId), for the detail panel. */
+export async function getGoalTasks(goalId: string) {
+  const session = await auth()
+  const userId = session?.user?.id
+  if (!userId) return []
+
+  try {
+    return await prisma.task.findMany({
+      // Scoped to the caller's own tasks, so an unowned goalId simply yields none.
+      // Mirror the progress denominator (withTaskCounts): exclude abandoned
+      // (wont-do) and recurring tasks, so the panel list matches the percent and
+      // checking every visible task can actually reach 100%.
+      where: { userId, goalId, status: { not: "wont-do" }, recurrenceId: null },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }],
+      select: { id: true, title: true, status: true, dueDate: true },
+    })
+  } catch {
+    return []
+  }
+}
+
 /** Active/achieved goals as lightweight options for the task-assignment dropdown. */
 export async function getGoalOptions() {
   const session = await auth()

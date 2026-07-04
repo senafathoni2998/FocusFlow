@@ -20,7 +20,7 @@ const mk = (o: Partial<Goal> = {}): Goal => ({
 })
 
 const noop = () => {}
-const handlers = { onAdjust: noop, onSetStatus: noop, onEdit: noop, onDelete: noop }
+const handlers = { onAdjust: noop, onSetStatus: noop, onEdit: noop, onDelete: noop, onOpenDetail: noop }
 
 describe("GoalCard", () => {
   it("renders the title and manual percent", () => {
@@ -58,6 +58,13 @@ describe("GoalCard", () => {
     render(<GoalCard goal={mk()} {...handlers} onSetStatus={onSetStatus} />)
     await userEvent.click(screen.getByRole("button", { name: "Archive" }))
     expect(onSetStatus).toHaveBeenCalledWith("archived")
+  })
+
+  it("clicking the title opens the detail panel", async () => {
+    const onOpenDetail = jest.fn()
+    render(<GoalCard goal={mk({ title: "Read" })} {...handlers} onOpenDetail={onOpenDetail} />)
+    await userEvent.click(screen.getByRole("button", { name: "Read" }))
+    expect(onOpenDetail).toHaveBeenCalled()
   })
 
   it("an achieved goal shows the badge and can be reactivated", async () => {

@@ -7,6 +7,7 @@ import { adjustGoalProgress, setGoalStatus, deleteGoal, getArchivedGoals } from 
 import { goalPercent } from "@/lib/goalStats"
 import GoalCard from "./GoalCard"
 import GoalForm from "./GoalForm"
+import GoalDetail from "./GoalDetail"
 
 const clampAdjust = (goal: Goal, delta: number): Partial<Goal> => {
   if (goal.progressType === "numeric") {
@@ -23,8 +24,16 @@ export default function GoalBoard({ goals }: { goals: Goal[] }) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [archivedGoals, setArchivedGoals] = useState<Goal[]>([])
+  const [detailGoal, setDetailGoal] = useState<Goal | null>(null)
 
   useEffect(() => setLocalGoals(goals), [goals])
+
+  // Keep an open detail panel's goal in sync with fresh server data so its header
+  // progress updates live; if the goal has left the active list (archived/deleted
+  // elsewhere), close the panel rather than showing a stale, orphaned goal.
+  useEffect(() => {
+    setDetailGoal((cur) => (cur ? localGoals.find((g) => g.id === cur.id) ?? null : cur))
+  }, [localGoals])
 
   // Load the archived list when the section is open, and refresh it whenever the
   // active goals change (e.g. a goal was just archived and dropped from `goals`).
@@ -117,6 +126,7 @@ export default function GoalBoard({ goals }: { goals: Goal[] }) {
         setShowForm(true)
       }}
       onDelete={() => handleDelete(g.id)}
+      onOpenDetail={() => setDetailGoal(g)}
     />
   )
 
@@ -209,6 +219,14 @@ export default function GoalBoard({ goals }: { goals: Goal[] }) {
             />
           </div>
         </div>
+      )}
+
+      {detailGoal && (
+        <GoalDetail
+          goal={detailGoal}
+          onClose={() => setDetailGoal(null)}
+          onChanged={() => router.refresh()}
+        />
       )}
     </div>
   )

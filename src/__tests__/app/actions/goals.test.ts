@@ -12,6 +12,7 @@ jest.mock("@/lib/prisma", () => ({
       delete: jest.fn(),
       aggregate: jest.fn(),
     },
+    task: { findMany: jest.fn() },
   },
 }))
 
@@ -86,6 +87,29 @@ describe("Goal Actions", () => {
       const { getArchivedGoals } = require("@/app/actions/goals")
       mockAuth.mockResolvedValue(null)
       expect(await getArchivedGoals()).toEqual([])
+    })
+  })
+
+  describe("getGoalTasks", () => {
+    it("returns the caller's tasks linked to the goal", async () => {
+      const { getGoalTasks } = require("@/app/actions/goals")
+      mockAuth.mockResolvedValue(session)
+      ;(mockPrisma.task.findMany as jest.Mock).mockResolvedValue([
+        { id: "t1", title: "Chapter 1", status: "todo", dueDate: null },
+      ])
+      const res = await getGoalTasks("g1")
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "u1", goalId: "g1", status: { not: "wont-do" }, recurrenceId: null },
+        })
+      )
+      expect(res).toEqual([{ id: "t1", title: "Chapter 1", status: "todo", dueDate: null }])
+    })
+
+    it("returns [] without a session", async () => {
+      const { getGoalTasks } = require("@/app/actions/goals")
+      mockAuth.mockResolvedValue(null)
+      expect(await getGoalTasks("g1")).toEqual([])
     })
   })
 

@@ -19,10 +19,11 @@ interface GoalCardProps {
   onSetStatus: (status: string) => void
   onEdit: () => void
   onDelete: () => void
+  onOpenDetail: () => void
   busy?: boolean
 }
 
-export default function GoalCard({ goal, onAdjust, onSetStatus, onEdit, onDelete, busy }: GoalCardProps) {
+export default function GoalCard({ goal, onAdjust, onSetStatus, onEdit, onDelete, onOpenDetail, busy }: GoalCardProps) {
   // The deadline countdown depends on the local clock, which the server (UTC)
   // can't know — render it only after mount so SSR and hydration agree.
   const [mounted, setMounted] = useState(false)
@@ -57,7 +58,13 @@ export default function GoalCard({ goal, onAdjust, onSetStatus, onEdit, onDelete
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-gray-900 truncate">{goal.title}</span>
+          <button
+            type="button"
+            onClick={onOpenDetail}
+            className="font-medium text-gray-900 truncate text-left hover:text-primary-700 hover:underline"
+          >
+            {goal.title}
+          </button>
           {isAchieved && (
             <span className="text-xs px-1.5 py-0.5 rounded bg-success-50 text-success-700 whitespace-nowrap">
               ✓ Achieved
