@@ -133,9 +133,10 @@ export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
             onChange={(e) => setPriority(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
           >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
             <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="none">None</option>
           </select>
         </div>
 

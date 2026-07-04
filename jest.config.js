@@ -10,6 +10,9 @@ const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jest-environment-jsdom',
   moduleNameMapper: {
+    // ESM-only markdown packages that Jest cannot parse; mocked for component tests.
+    '^react-markdown$': '<rootDir>/src/__mocks__/react-markdown.tsx',
+    '^remark-gfm$': '<rootDir>/src/__mocks__/remark-gfm.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],

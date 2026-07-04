@@ -4,12 +4,54 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { z } from "zod"
+import {
+  TASK_STATUSES,
+  TASK_PRIORITIES,
+  priorityRankOf,
+  isTerminalStatus,
+} from "@/lib/taskConstants"
+
+/**
+ * Parse a date input into a Date anchored at LOCAL midnight.
+ *
+ * `<input type="date">` and the AI both send bare `YYYY-MM-DD` strings.
+ * `new Date("YYYY-MM-DD")` parses as UTC midnight, which shifts the day
+ * backwards in negative-offset timezones. Building from parts preserves the
+ * calendar day the user picked. Full ISO strings (with a time) are parsed as-is.
+ */
+function parseDateInput(input?: string | null): Date | null {
+  if (!input) return null
+  const bare = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input)
+  if (bare) {
+    const year = Number(bare[1])
+    const month = Number(bare[2])
+    const day = Number(bare[3])
+    const d = new Date(year, month - 1, day)
+    // Reject out-of-range values that JS would silently roll over
+    // (e.g. "2024-13-45"); the components must round-trip exactly.
+    if (
+      d.getFullYear() !== year ||
+      d.getMonth() !== month - 1 ||
+      d.getDate() !== day
+    ) {
+      return null
+    }
+    return d
+  }
+  const d = new Date(input)
+  return isNaN(d.getTime()) ? null : d
+}
 
 const taskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  priority: z.enum(["low", "medium", "high"]),
-  dueDate: z.string().optional()
+  priority: z.enum(["none", "low", "medium", "high"]),
+  dueDate: z.string().optional(),
+  startDate: z.string().optional(),
+  isAllDay: z.boolean().optional(),
+  timeEstimateMin: z.number().int().positive().optional(),
+  estimatedPomos: z.number().int().positive().optional(),
+  parentTaskId: z.string().optional(),
 })
 
 export async function createTask(data: {
@@ -17,6 +59,11 @@ export async function createTask(data: {
   description?: string
   priority?: string
   dueDate?: string
+  startDate?: string
+  isAllDay?: boolean
+  timeEstimateMin?: number
+  estimatedPomos?: number
+  parentTaskId?: string
 }) {
   const session = await auth()
 
@@ -29,15 +76,49 @@ export async function createTask(data: {
       title: data.title,
       description: data.description,
       priority: data.priority || "medium",
-      dueDate: data.dueDate
+      dueDate: data.dueDate,
+      startDate: data.startDate,
+      isAllDay: data.isAllDay,
+      timeEstimateMin: data.timeEstimateMin,
+      estimatedPomos: data.estimatedPomos,
+      parentTaskId: data.parentTaskId,
     })
+
+    // If creating a subtask, verify the parent belongs to this user.
+    if (validated.parentTaskId) {
+      const parent = await prisma.task.findFirst({
+        where: { id: validated.parentTaskId, userId: session.user.id },
+        select: { id: true },
+      })
+      if (!parent) {
+        return { error: "Parent task not found" }
+      }
+    }
+
+    // Place new tasks at the end of the "todo" column with a spaced `order`, so
+    // drag-reordering has integer room to insert between existing tasks (rather
+    // than everything defaulting to 0).
+    const maxOrder = await prisma.task.aggregate({
+      where: { userId: session.user.id, status: "todo" },
+      _max: { order: true },
+    })
+    const nextOrder = (maxOrder._max.order ?? 0) + 10
 
     const task = await prisma.task.create({
       data: {
-        ...validated,
-        dueDate: validated.dueDate ? new Date(validated.dueDate) : null,
-        userId: session.user.id
-      }
+        title: validated.title,
+        description: validated.description,
+        priority: validated.priority,
+        priorityRank: priorityRankOf(validated.priority),
+        dueDate: parseDateInput(validated.dueDate),
+        startDate: parseDateInput(validated.startDate),
+        isAllDay: validated.isAllDay ?? true,
+        timeEstimateMin: validated.timeEstimateMin,
+        estimatedPomos: validated.estimatedPomos,
+        parentTaskId: validated.parentTaskId,
+        order: nextOrder,
+        userId: session.user.id,
+      },
     })
 
     revalidatePath("/tasks")
@@ -60,6 +141,11 @@ export async function updateTask(
     status?: string
     priority?: string
     dueDate?: string
+    startDate?: string
+    isAllDay?: boolean
+    timeEstimateMin?: number
+    estimatedPomos?: number
+    parentTaskId?: string | null
   }
 ) {
   const session = await auth()
@@ -71,7 +157,7 @@ export async function updateTask(
   try {
     // Verify task ownership
     const existingTask = await prisma.task.findFirst({
-      where: { id, userId: session.user.id }
+      where: { id, userId: session.user.id },
     })
 
     if (!existingTask) {
@@ -81,15 +167,63 @@ export async function updateTask(
     const updateData: any = {}
     if (data.title) updateData.title = data.title
     if (data.description !== undefined) updateData.description = data.description
-    if (data.status) updateData.status = data.status
-    if (data.priority) updateData.priority = data.priority
+
+    if (data.status) {
+      if (!TASK_STATUSES.includes(data.status as never)) {
+        return { error: "Invalid status" }
+      }
+      updateData.status = data.status
+      // Stamp completedAt on entering a terminal state (preserving an existing
+      // completion time), clear it when reopening.
+      if (isTerminalStatus(data.status)) {
+        updateData.completedAt = existingTask.completedAt ?? new Date()
+      } else {
+        updateData.completedAt = null
+      }
+    }
+
+    if (data.priority) {
+      if (!TASK_PRIORITIES.includes(data.priority as never)) {
+        return { error: "Invalid priority" }
+      }
+      updateData.priority = data.priority
+      updateData.priorityRank = priorityRankOf(data.priority)
+    }
+
     if (data.dueDate !== undefined) {
-      updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null
+      updateData.dueDate = parseDateInput(data.dueDate)
+    }
+    if (data.startDate !== undefined) {
+      updateData.startDate = parseDateInput(data.startDate)
+    }
+    if (data.isAllDay !== undefined) updateData.isAllDay = data.isAllDay
+    if (data.timeEstimateMin !== undefined) {
+      updateData.timeEstimateMin = data.timeEstimateMin
+    }
+    if (data.estimatedPomos !== undefined) {
+      updateData.estimatedPomos = data.estimatedPomos
+    }
+
+    if (data.parentTaskId !== undefined) {
+      if (data.parentTaskId === null) {
+        updateData.parentTaskId = null
+      } else if (data.parentTaskId === id) {
+        return { error: "A task cannot be its own parent" }
+      } else {
+        const parent = await prisma.task.findFirst({
+          where: { id: data.parentTaskId, userId: session.user.id },
+          select: { id: true },
+        })
+        if (!parent) {
+          return { error: "Parent task not found" }
+        }
+        updateData.parentTaskId = data.parentTaskId
+      }
     }
 
     const task = await prisma.task.update({
       where: { id },
-      data: updateData
+      data: updateData,
     })
 
     revalidatePath("/tasks")
@@ -105,37 +239,28 @@ export async function deleteTask(id: string) {
   const session = await auth()
 
   if (!session?.user?.id) {
-    console.log("[deleteTask] Unauthorized - no session")
     return { error: "Unauthorized" }
   }
-
-  console.log("[deleteTask] Attempting to delete task:", id, "for user:", session.user.id)
 
   try {
     // Verify task ownership
     const existingTask = await prisma.task.findFirst({
-      where: { id, userId: session.user.id }
+      where: { id, userId: session.user.id },
     })
 
-    console.log("[deleteTask] Found task:", existingTask?.id, existingTask?.title)
-
     if (!existingTask) {
-      console.log("[deleteTask] Task not found")
       return { error: "Task not found" }
     }
 
     await prisma.task.delete({
-      where: { id }
+      where: { id },
     })
-
-    console.log("[deleteTask] Task deleted successfully")
 
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
 
     return { success: true }
   } catch (error) {
-    console.error("[deleteTask] Error:", error)
     return { error: "Failed to delete task" }
   }
 }
@@ -157,7 +282,7 @@ export async function getTasks(userId?: string) {
   try {
     const tasks = await prisma.task.findMany({
       where: { userId: targetUserId },
-      orderBy: [{ order: "asc" }, { createdAt: "desc" }]
+      orderBy: [{ order: "asc" }, { createdAt: "desc" }],
     })
 
     return tasks
@@ -180,20 +305,24 @@ export async function reorderTask(data: {
   try {
     // Verify task ownership
     const existingTask = await prisma.task.findFirst({
-      where: { id: data.id, userId: session.user.id }
+      where: { id: data.id, userId: session.user.id },
     })
 
     if (!existingTask) {
       return { error: "Task not found" }
     }
 
-    // Update the task with new status and order
+    // Update the task with new status and order. Keep completedAt in sync when
+    // a drag moves a card into (or out of) a terminal column.
     const task = await prisma.task.update({
       where: { id: data.id },
       data: {
         status: data.newStatus,
-        order: data.newOrder
-      }
+        order: data.newOrder,
+        completedAt: isTerminalStatus(data.newStatus)
+          ? existingTask.completedAt ?? new Date()
+          : null,
+      },
     })
 
     revalidatePath("/tasks")

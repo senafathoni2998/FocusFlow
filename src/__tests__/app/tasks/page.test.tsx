@@ -30,12 +30,12 @@ jest.mock("@/app/actions/tasks", () => ({
   getTasks: jest.fn(),
 }))
 
-// Mock TaskBoard component
-jest.mock("@/components/tasks/TaskBoard", () => {
-  return function MockTaskBoard({ tasks }: { tasks: any[] }) {
+// Mock TasksWorkspace (the page's child component)
+jest.mock("@/components/tasks/TasksWorkspace", () => {
+  return function MockTasksWorkspace({ tasks }: { tasks: any[] }) {
     return (
-      <div data-testid="task-board" data-tasks-count={tasks?.length || 0}>
-        TaskBoard
+      <div data-testid="tasks-workspace" data-tasks-count={tasks?.length || 0}>
+        TasksWorkspace
       </div>
     )
   }
@@ -157,7 +157,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
     })
 
     it("should render main element with correct styling", async () => {
@@ -220,7 +220,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      const taskBoard = container.querySelector('[data-testid="task-board"]')
+      const taskBoard = container.querySelector('[data-testid="tasks-workspace"]')
       expect(taskBoard?.getAttribute("data-tasks-count")).toBe("3")
     })
 
@@ -232,7 +232,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      const taskBoard = container.querySelector('[data-testid="task-board"]')
+      const taskBoard = container.querySelector('[data-testid="tasks-workspace"]')
       expect(taskBoard?.getAttribute("data-tasks-count")).toBe("0")
     })
 
@@ -244,7 +244,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      const taskBoard = container.querySelector('[data-testid="task-board"]')
+      const taskBoard = container.querySelector('[data-testid="tasks-workspace"]')
       expect(taskBoard?.getAttribute("data-tasks-count")).toBe("1")
     })
 
@@ -262,7 +262,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      const taskBoard = container.querySelector('[data-testid="task-board"]')
+      const taskBoard = container.querySelector('[data-testid="tasks-workspace"]')
       expect(taskBoard?.getAttribute("data-tasks-count")).toBe("50")
     })
   })
@@ -278,7 +278,7 @@ describe("Tasks Page", () => {
 
       const main = container.querySelector("main")
       const innerDiv = main?.querySelector(":scope > div")
-      const taskBoard = innerDiv?.querySelector('[data-testid="task-board"]')
+      const taskBoard = innerDiv?.querySelector('[data-testid="tasks-workspace"]')
 
       expect(main).toBeInTheDocument()
       expect(innerDiv).toBeInTheDocument()
@@ -320,7 +320,7 @@ describe("Tasks Page", () => {
       expect(contentDiv).toBeInTheDocument()
 
       // Check TaskBoard
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
     })
 
     it("should render with tasks when authenticated", async () => {
@@ -331,8 +331,8 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
-      expect(container.querySelector('[data-testid="task-board"]')?.getAttribute("data-tasks-count")).toBe("3")
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')?.getAttribute("data-tasks-count")).toBe("3")
     })
   })
 
@@ -345,7 +345,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
     })
 
     it("should render with user having name", async () => {
@@ -356,7 +356,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
     })
 
     it("should render with user having email", async () => {
@@ -367,7 +367,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
     })
 
     it("should handle user with minimal properties", async () => {
@@ -378,7 +378,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
     })
   })
 
@@ -441,8 +441,8 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      expect(container.querySelector('[data-testid="task-board"]')).toBeInTheDocument()
-      expect(container.querySelector('[data-testid="task-board"]')?.getAttribute("data-tasks-count")).toBe("0")
+      expect(container.querySelector('[data-testid="tasks-workspace"]')).toBeInTheDocument()
+      expect(container.querySelector('[data-testid="tasks-workspace"]')?.getAttribute("data-tasks-count")).toBe("0")
     })
 
     it("should render TaskBoard even when getTasks returns empty array", async () => {
@@ -453,7 +453,7 @@ describe("Tasks Page", () => {
 
       const { container } = render(await TasksPage())
 
-      const taskBoard = container.querySelector('[data-testid="task-board"]')
+      const taskBoard = container.querySelector('[data-testid="tasks-workspace"]')
       expect(taskBoard).toBeInTheDocument()
     })
   })

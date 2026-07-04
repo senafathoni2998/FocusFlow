@@ -5,20 +5,15 @@ import { updateTask, deleteTask } from "@/app/actions/tasks";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import EditTaskForm from "./EditTaskForm";
+import type { Task } from "@/types/task";
 
 interface TaskCardProps {
-  task: {
-    id: string;
-    title: string;
-    description?: string | null;
-    status: string;
-    priority: string;
-    dueDate?: Date | null;
-  };
+  task: Task;
   onUpdate?: () => void;
 }
 
 const priorityColors = {
+  none: "bg-gray-100 text-gray-700 border-gray-200",
   low: "bg-success-100 text-success-800 border-success-200",
   medium: "bg-warning-100 text-warning-800 border-warning-200",
   high: "bg-danger-100 text-danger-800 border-danger-200",
@@ -28,6 +23,7 @@ const statusColors = {
   todo: "bg-gray-100 text-gray-800",
   "in-progress": "bg-primary-100 text-primary-800",
   completed: "bg-success-100 text-success-800",
+  "wont-do": "bg-gray-200 text-gray-600 line-through",
 };
 
 export default function TaskCard({ task, onUpdate }: TaskCardProps) {
@@ -74,6 +70,9 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
             <option value="todo">To Do</option>
             <option value="in-progress">In Progress</option>
             <option value="completed">Completed</option>
+            {/* "wont-do" is a valid status at the data layer, but not offered here
+                until the Phase 2 workspace can show it in a filter/section — the
+                3-column board has nowhere to display it. */}
           </select>
         </div>
       </div>

@@ -24,6 +24,7 @@ jest.mock("@/lib/prisma", () => ({
       update: jest.fn(),
       delete: jest.fn(),
       findMany: jest.fn(),
+      aggregate: jest.fn(),
     },
   },
 }))
@@ -50,6 +51,8 @@ describe("Task Actions", () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
+    // Default: no existing tasks, so createTask seeds order = 10.
+    ;(mockPrisma.task.aggregate as jest.Mock).mockResolvedValue({ _max: { order: null } })
     // Mock console methods to avoid noise in tests
     jest.spyOn(console, "log").mockImplementation(() => {})
     jest.spyOn(console, "error").mockImplementation(() => {})
@@ -101,7 +104,15 @@ describe("Task Actions", () => {
           title: "New Task",
           description: "Task description",
           priority: "high",
-          dueDate: new Date("2024-12-31"),
+          priorityRank: 3,
+          // Parsed as LOCAL midnight (not UTC) — the timezone-correctness fix.
+          dueDate: new Date(2024, 11, 31),
+          startDate: null,
+          isAllDay: true,
+          timeEstimateMin: undefined,
+          estimatedPomos: undefined,
+          parentTaskId: undefined,
+          order: 10,
           userId: "user-123"
         }
       })
@@ -214,6 +225,17 @@ describe("Task Actions", () => {
         })
       })
     })
+
+    it("should sync priorityRank from priority", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.create.mockResolvedValue({ id: "task-1" } as any)
+
+      await createTask({ title: "T", priority: "low" })
+
+      expect(mockPrisma.task.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ priority: "low", priorityRank: 1 }),
+      })
+    })
   })
 
   describe("updateTask", () => {
@@ -288,7 +310,7 @@ describe("Task Actions", () => {
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: "task-1" },
-        data: { status: "in-progress" }
+        data: { status: "in-progress", completedAt: null }
       })
     })
 
@@ -307,8 +329,25 @@ describe("Task Actions", () => {
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: "task-1" },
-        data: { priority: "high" }
+        data: { priority: "high", priorityRank: 3 }
       })
+    })
+
+    it("should stamp completedAt when status becomes completed", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.findFirst.mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        status: "todo",
+        completedAt: null,
+      } as any)
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      await updateTask("task-1", { status: "completed" })
+
+      const call = mockPrisma.task.update.mock.calls[0][0] as any
+      expect(call.data.status).toBe("completed")
+      expect(call.data.completedAt).toBeInstanceOf(Date)
     })
 
     it("should update task due date", async () => {
@@ -318,7 +357,7 @@ describe("Task Actions", () => {
         userId: "user-123"
       }
       mockPrisma.task.findFirst.mockResolvedValue(existingTask)
-      const newDueDate = new Date("2024-12-31")
+      const newDueDate = new Date(2024, 11, 31)
       mockPrisma.task.update.mockResolvedValue({ ...existingTask, dueDate: newDueDate })
 
       await updateTask("task-1", { dueDate: "2024-12-31" })
@@ -610,7 +649,8 @@ describe("Task Actions", () => {
         where: { id: "task-1" },
         data: {
           status: "in-progress",
-          order: 1
+          order: 1,
+          completedAt: null
         }
       })
       expect(result).toEqual({ success: true, task: updatedTask })
@@ -692,7 +732,8 @@ describe("Task Actions", () => {
         where: { id: "task-1" },
         data: {
           status: "done",
-          order: 0
+          order: 0,
+          completedAt: null
         }
       })
     })

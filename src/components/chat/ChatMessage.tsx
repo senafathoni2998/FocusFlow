@@ -1,6 +1,8 @@
 "use client"
 
 import React from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 export interface ChatMessageProps {
   role: "user" | "assistant"
@@ -11,15 +13,6 @@ export interface ChatMessageProps {
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, timestamp, isLoading }) => {
   const isUser = role === "user"
-
-  // Simple markdown-like formatting
-  const formatContent = (text: string) => {
-    // Bold text
-    text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    // Line breaks
-    text = text.replace(/\n/g, "<br />")
-    return text
-  }
 
   return (
     <div className={`flex gap-3 mb-4 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -54,10 +47,38 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, timestamp, isL
             <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
           </div>
         ) : (
-          <div
-            className="text-sm leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: formatContent(content) }}
-          />
+          <div className="text-sm leading-relaxed break-words">
+            {/* Rendered as sanitized markdown (react-markdown escapes raw HTML),
+                replacing the previous dangerouslySetInnerHTML path. */}
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc list-inside mb-2 last:mb-0 space-y-0.5">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal list-inside mb-2 last:mb-0 space-y-0.5">{children}</ol>,
+                li: ({ children }) => <li>{children}</li>,
+                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                em: ({ children }) => <em className="italic">{children}</em>,
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2 break-all"
+                  >
+                    {children}
+                  </a>
+                ),
+                code: ({ children }) => (
+                  <code className={`px-1 py-0.5 rounded text-xs font-mono ${isUser ? "bg-primary-700/60" : "bg-gray-200 dark:bg-gray-700"}`}>
+                    {children}
+                  </code>
+                ),
+              }}
+            >
+              {content}
+            </ReactMarkdown>
+          </div>
         )}
 
         {timestamp && !isLoading && (

@@ -46,12 +46,23 @@ interface EditTaskFormProps {
   onUpdate?: () => void
 }
 
+// Format a stored Date to the local YYYY-MM-DD a <input type="date"> expects.
+// Using local getFullYear/getMonth/getDate (not toISOString, which is UTC) so a
+// date stored at local midnight doesn't shift a day in offset timezones.
+const toDateInputValue = (date: Date | string): string => {
+  const d = new Date(date)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
 export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormProps) {
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description || "")
   const [priority, setPriority] = useState(task.priority)
   const [dueDate, setDueDate] = useState(
-    task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : ""
+    task.dueDate ? toDateInputValue(task.dueDate) : ""
   )
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -145,9 +156,10 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
             onChange={(e) => setPriority(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
           >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
             <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="none">None</option>
           </select>
         </div>
 

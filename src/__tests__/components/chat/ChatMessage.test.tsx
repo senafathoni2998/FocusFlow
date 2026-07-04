@@ -213,8 +213,11 @@ describe("ChatMessage Component", () => {
     })
   })
 
-  describe("Markdown Formatting", () => {
-    it("should format bold text in user messages", () => {
+  describe("Markdown Rendering", () => {
+    // ChatMessage now delegates rendering to react-markdown (mocked in tests),
+    // so these assert the content reaches the renderer rather than checking the
+    // old regex formatter's <strong>/<br> output.
+    it("should render bold markdown in user messages", () => {
       const { container } = render(
         <ChatMessage
           role="user"
@@ -223,12 +226,10 @@ describe("ChatMessage Component", () => {
         />
       )
 
-      const boldElement = container.querySelector("strong")
-      expect(boldElement).toBeInTheDocument()
-      expect(boldElement?.textContent).toBe("bold text")
+      expect(container.textContent).toContain("bold text")
     })
 
-    it("should format bold text in assistant messages", () => {
+    it("should render bold markdown in assistant messages", () => {
       const { container } = render(
         <ChatMessage
           role="assistant"
@@ -237,12 +238,10 @@ describe("ChatMessage Component", () => {
         />
       )
 
-      const boldElement = container.querySelector("strong")
-      expect(boldElement).toBeInTheDocument()
-      expect(boldElement?.textContent).toBe("important")
+      expect(container.textContent).toContain("important")
     })
 
-    it("should handle multiple bold sections", () => {
+    it("should render multiple bold sections", () => {
       const { container } = render(
         <ChatMessage
           role="user"
@@ -251,13 +250,11 @@ describe("ChatMessage Component", () => {
         />
       )
 
-      const boldElements = container.querySelectorAll("strong")
-      expect(boldElements).toHaveLength(2)
-      expect(boldElements[0]?.textContent).toBe("First")
-      expect(boldElements[1]?.textContent).toBe("second")
+      expect(container.textContent).toContain("First")
+      expect(container.textContent).toContain("second")
     })
 
-    it("should convert line breaks to <br />", () => {
+    it("should render multi-line content", () => {
       const { container } = render(
         <ChatMessage
           role="user"
@@ -269,19 +266,22 @@ Line 3`}
       )
 
       const messageContent = container.querySelector(".text-sm.leading-relaxed")
-      expect(messageContent?.innerHTML).toMatch(/<br\s*\/?>/)
+      expect(messageContent?.textContent).toContain("Line 1")
+      expect(messageContent?.textContent).toContain("Line 3")
     })
 
-    it("should handle bold with line breaks", () => {
-      render(
+    it("should render bold combined with line breaks", () => {
+      const { container } = render(
         <ChatMessage
           role="assistant"
-          content="**Bold**\nNew line"
+          content={`**Bold**
+New line`}
           timestamp={new Date("2024-01-01T10:00:00Z")}
         />
       )
 
-      expect(screen.getByText("Bold")).toBeInTheDocument()
+      expect(container.textContent).toContain("Bold")
+      expect(container.textContent).toContain("New line")
     })
   })
 
@@ -609,7 +609,7 @@ Line 3`}
         />
       )
 
-      expect(screen.getByText("all bold")).toBeInTheDocument()
+      expect(screen.getByText(/all bold/)).toBeInTheDocument()
     })
 
     it("should handle message with multiple consecutive line breaks", () => {
@@ -625,7 +625,8 @@ Line 4`}
       )
 
       const messageContent = container.querySelector(".text-sm.leading-relaxed")
-      expect(messageContent?.innerHTML).toMatch(/<br\s*\/?>/)
+      expect(messageContent?.textContent).toContain("Line 1")
+      expect(messageContent?.textContent).toContain("Line 4")
     })
 
     it("should handle message with emoji", () => {
@@ -686,9 +687,8 @@ Line 4`}
       // Check message bubble
       expect(container.querySelector(".bg-primary-600")).toBeInTheDocument()
 
-      // Check bold content
-      const boldElement = container.querySelector("strong")
-      expect(boldElement?.textContent).toBe("world")
+      // Check content is rendered (markdown renderer is mocked in tests)
+      expect(container.textContent).toContain("world")
 
       // Check timestamp exists
       const timestamp = container.querySelector(".text-xs.mt-1.opacity-70")
@@ -714,9 +714,8 @@ Line 4`}
       // Check message bubble
       expect(container.querySelector(".bg-gray-100")).toBeInTheDocument()
 
-      // Check bold content
-      const boldElement = container.querySelector("strong")
-      expect(boldElement?.textContent).toBe("answer")
+      // Check content is rendered (markdown renderer is mocked in tests)
+      expect(container.textContent).toContain("answer")
 
       // Check timestamp exists
       const timestamp = container.querySelector(".text-xs.mt-1.opacity-70")

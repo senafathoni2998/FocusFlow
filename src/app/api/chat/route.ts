@@ -103,6 +103,12 @@ const functions = [
   },
 ];
 
+// Format a Date as YYYY-MM-DD in the server's local time — the same basis
+// createTask uses to store all-day dates, so displayed/parsed dates stay aligned.
+function formatLocalDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 const systemPrompt = `You are a helpful task management assistant for FocusFlow. You can help users:
 - Create tasks with title, description, priority, and due dates
 - Update existing tasks (change status, priority, title, description, due dates)
@@ -188,16 +194,28 @@ export async function POST(req: NextRequest) {
             .slice(0, 15)
             .map(
               (t) =>
-                `• "${t.title}" (ID: ${t.id}, Status: ${t.status}, Priority: ${t.priority})`,
+                `• "${t.title}" (ID: ${t.id}, Status: ${t.status}, Priority: ${t.priority}${t.dueDate ? `, Due: ${formatLocalDate(new Date(t.dueDate))}` : ""})`,
             )
             .join("\n")}${userTasks.length > 15 ? `\n... and ${userTasks.length - 15} more tasks` : ""}
 
 IMPORTANT: When updating a task, find the task by its TITLE in the list above, then use its ID (the long string after "ID:").`
         : "\n\nUser has no tasks yet.";
 
+    // Ground the assistant in the current date so it can resolve relative dates.
+    const now = new Date();
+    const todayHuman = now.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const todayISO = formatLocalDate(now);
+    const dateContext = `Today is ${todayHuman} (ISO: ${todayISO}). When the user gives a relative date such as "today", "tomorrow", "next friday", "this month", "next month", or "in 2 weeks", resolve it against today's date and always pass dueDate to functions in ISO 8601 format (YYYY-MM-DD).`;
+
     // Build messages array
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: "system", content: systemPrompt },
+      { role: "system", content: dateContext },
       { role: "assistant", content: `Current user context:${taskContext}` },
       ...history.map((msg: { role: string; content: string }) => ({
         role: msg.role as "user" | "assistant",
