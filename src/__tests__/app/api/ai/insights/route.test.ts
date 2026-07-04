@@ -36,6 +36,12 @@ jest.mock("@/lib/prisma", () => ({
     task: {
       findMany: jest.fn(),
     },
+    goal: {
+      findMany: jest.fn(),
+    },
+    habit: {
+      findMany: jest.fn(),
+    },
   },
 }))
 
@@ -99,9 +105,35 @@ describe("AI Insights API Route", () => {
     },
   ]
 
+  const mockGoals = [
+    {
+      id: "goal-1",
+      userId: "user-123",
+      title: "Read 12 books",
+      progressType: "numeric",
+      status: "active",
+      targetDate: null,
+    },
+  ]
+
+  const mockHabits = [
+    {
+      id: "habit-1",
+      userId: "user-123",
+      name: "Meditate",
+      frequencyType: "daily",
+      goalType: "achieve",
+      archived: false,
+      checkIns: [],
+    },
+  ]
+
   beforeEach(() => {
     jest.clearAllMocks()
     jest.spyOn(console, "error").mockImplementation(() => {})
+    // Default the new pillar fetches so the Promise.all always resolves.
+    mockPrisma.goal.findMany.mockResolvedValue([])
+    mockPrisma.habit.findMany.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -266,6 +298,8 @@ describe("AI Insights API Route", () => {
       mockAuth.mockResolvedValue(mockSession)
       mockPrisma.focusSession.findMany.mockResolvedValue(mockSessions)
       mockPrisma.task.findMany.mockResolvedValue(mockTasks)
+      mockPrisma.goal.findMany.mockResolvedValue(mockGoals)
+      mockPrisma.habit.findMany.mockResolvedValue(mockHabits)
       mockGenerateInsights.mockResolvedValue({
         insights: ["Keep up the good work!", "Focus on high priority tasks"],
         error: null
@@ -273,7 +307,32 @@ describe("AI Insights API Route", () => {
 
       await GET()
 
-      expect(mockGenerateInsights).toHaveBeenCalledWith(mockSessions, mockTasks)
+      expect(mockGenerateInsights).toHaveBeenCalledWith(
+        mockSessions,
+        mockTasks,
+        mockGoals,
+        mockHabits,
+      )
+    })
+
+    it("should fetch active goals and habits for the user", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.focusSession.findMany.mockResolvedValue([])
+      mockPrisma.task.findMany.mockResolvedValue([])
+      mockGenerateInsights.mockResolvedValue({ insights: ["x"], error: null })
+
+      await GET()
+
+      expect(mockPrisma.goal.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "user-123", status: { not: "archived" } },
+        }),
+      )
+      expect(mockPrisma.habit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "user-123", archived: false },
+        }),
+      )
     })
 
     it("should return insights in response", async () => {
@@ -468,7 +527,7 @@ describe("AI Insights API Route", () => {
       const response = await GET()
 
       expect(response.status).toBe(200)
-      expect(mockGenerateInsights).toHaveBeenCalledWith(mixedSessions, [])
+      expect(mockGenerateInsights).toHaveBeenCalledWith(mixedSessions, [], [], [])
     })
 
     it("should handle tasks with various statuses", async () => {
@@ -488,7 +547,7 @@ describe("AI Insights API Route", () => {
       const response = await GET()
 
       expect(response.status).toBe(200)
-      expect(mockGenerateInsights).toHaveBeenCalledWith([], mixedTasks)
+      expect(mockGenerateInsights).toHaveBeenCalledWith([], mixedTasks, [], [])
     })
 
     it("should handle large number of sessions", async () => {

@@ -6,6 +6,25 @@ import {
   deleteTask,
   getTasks,
 } from "@/app/actions/tasks";
+import {
+  getGoals,
+  createGoal,
+  updateGoal,
+  adjustGoalProgress,
+  setGoalStatus,
+  deleteGoal,
+} from "@/app/actions/goals";
+import {
+  getHabits,
+  createHabit,
+  checkInHabit,
+  deleteHabit,
+} from "@/app/actions/habits";
+import { getDueReminders } from "@/app/actions/reminders";
+import { computeHabitStats } from "@/lib/habitStats";
+import { goalPercent } from "@/lib/goalStats";
+import type { Goal } from "@/types/goal";
+import type { Habit } from "@/types/habit";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -101,6 +120,195 @@ const functions = [
       properties: {},
     },
   },
+  // ---- Goals ----
+  {
+    name: "createGoal",
+    description:
+      "Create a new goal. Progress can be tracked manually (a self-reported 0-100%), numerically (a current value toward a target, e.g. read 12 books), or derived from linked tasks.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The goal's title" },
+        description: {
+          type: "string",
+          description: "Optional details/notes for the goal",
+        },
+        progressType: {
+          type: "string",
+          enum: ["manual", "numeric", "tasks"],
+          description:
+            "How progress is measured. Use 'numeric' when there is a target number, 'manual' for a self-reported percentage, 'tasks' to derive progress from linked tasks.",
+        },
+        targetValue: {
+          type: "number",
+          description:
+            "Target amount for a 'numeric' goal (e.g. 12 for 'read 12 books'). Required for numeric goals or progress reads 0%.",
+        },
+        unit: {
+          type: "string",
+          description: "Unit for a numeric goal (e.g. 'books', 'km')",
+        },
+        targetDate: {
+          type: "string",
+          description: "Optional deadline in ISO 8601 date format (YYYY-MM-DD)",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "updateGoal",
+    description:
+      "Update a goal's details (title, description, progress type, target value/unit, deadline). Do NOT use this to change progress or status — use adjustGoalProgress or setGoalStatus for those.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ID of the goal to update" },
+        title: { type: "string", description: "New title" },
+        description: { type: "string", description: "New description/notes" },
+        progressType: {
+          type: "string",
+          enum: ["manual", "numeric", "tasks"],
+        },
+        targetValue: {
+          type: "number",
+          description: "New target amount (numeric goals)",
+        },
+        unit: { type: "string", description: "New unit (numeric goals)" },
+        targetDate: {
+          type: "string",
+          description: "New deadline in ISO 8601 (YYYY-MM-DD)",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "adjustGoalProgress",
+    description:
+      "Nudge a goal's progress by a delta. For numeric goals this moves the current value (e.g. +3 books); for manual goals it moves the percentage (e.g. +10). Use a negative delta to decrease. Has no effect on 'tasks' goals — their progress comes from completing linked tasks.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ID of the goal" },
+        delta: {
+          type: "number",
+          description: "Amount to add (use a negative number to subtract)",
+        },
+      },
+      required: ["id", "delta"],
+    },
+  },
+  {
+    name: "setGoalStatus",
+    description:
+      "Change a goal's status: mark it achieved, archive it, or reactivate it (set back to active).",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ID of the goal" },
+        status: {
+          type: "string",
+          enum: ["active", "achieved", "archived"],
+          description: "The new status",
+        },
+      },
+      required: ["id", "status"],
+    },
+  },
+  {
+    name: "deleteGoal",
+    description:
+      "Delete a goal by its ID. Any linked tasks are kept but unlinked from the goal.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ID of the goal to delete" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "listGoals",
+    description:
+      "Get the user's active and achieved goals with their current progress percentage.",
+    parameters: { type: "object", properties: {} },
+  },
+  // ---- Habits ----
+  {
+    name: "createHabit",
+    description:
+      "Create a new daily habit. An 'achieve' habit is a simple daily check (done / not done); an 'amount' habit tracks a numeric target per day (e.g. drink 8 glasses of water).",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The habit's name" },
+        goalType: {
+          type: "string",
+          enum: ["achieve", "amount"],
+          description:
+            "'achieve' for a simple daily done/not-done, 'amount' for a per-day numeric target",
+        },
+        targetAmount: {
+          type: "number",
+          description: "Daily target for an 'amount' habit (e.g. 8)",
+        },
+        unit: {
+          type: "string",
+          description: "Unit for an 'amount' habit (e.g. 'glasses')",
+        },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "checkInHabit",
+    description:
+      "Log (check in) a habit for a day. Default is today with delta +1 (marks an 'achieve' habit done, or adds 1 to an 'amount' habit). Use a negative delta to undo a check-in. Optionally pass a specific date.",
+    parameters: {
+      type: "object",
+      properties: {
+        habitId: {
+          type: "string",
+          description: "The ID of the habit to check in",
+        },
+        delta: {
+          type: "number",
+          description: "Amount to add for the day (default 1; negative to undo)",
+        },
+        date: {
+          type: "string",
+          description:
+            "The day to check in, ISO 8601 (YYYY-MM-DD). Defaults to today.",
+        },
+      },
+      required: ["habitId"],
+    },
+  },
+  {
+    name: "listHabits",
+    description:
+      "Get the user's habits with their current streak, whether today is done, and this month's completion rate.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "deleteHabit",
+    description: "Delete a habit (and its check-in history) by its ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ID of the habit to delete" },
+      },
+      required: ["id"],
+    },
+  },
+  // ---- Reminders (read-only) ----
+  {
+    name: "listDueReminders",
+    description:
+      "List the user's reminders that are currently due (their trigger time has passed and they haven't been dispatched yet), along with the task each is attached to. Reminders can only be set on a task in the app — you cannot create them.",
+    parameters: { type: "object", properties: {} },
+  },
 ];
 
 // Format a Date as YYYY-MM-DD in the server's local time — the same basis
@@ -109,13 +317,33 @@ function formatLocalDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const systemPrompt = `You are a helpful task management assistant for FocusFlow. You can help users:
-- Create tasks with title, description, priority, and due dates
-- Update existing tasks (change status, priority, title, description, due dates)
-- Delete tasks
-- List and organize tasks
+// A goal's targetDate is a calendar-day deadline stored at UTC midnight, so we
+// format it with UTC getters to round-trip the exact day the user picked (the
+// same convention goalStats/toTargetDate use) — local getters would shift it a
+// day in negative-offset zones.
+function formatUTCDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
 
-When users ask for help, extract the task details and call the appropriate function.
+// A reminder's triggerAt is a real instant (the local time the user picked), so a
+// human-friendly local date+time is the right way to show it.
+function formatReminderTime(d: Date): string {
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const systemPrompt = `You are a helpful productivity assistant for FocusFlow. FocusFlow tracks four pillars: TASKS, GOALS, HABITS, and REMINDERS. You can help users:
+- Tasks: create, update (status, priority, title, description, due date), delete, and list tasks
+- Goals: create goals, edit their details, nudge their progress, mark them achieved/archived/active, delete, and list goals
+- Habits: create daily habits, check in (log) a habit for a day, delete, and list habits with their streaks
+- Reminders: list reminders that are currently due (reminders are attached to tasks and can only be set on a task in the app — you cannot create them here)
+
+When users ask for help, extract the details and call the appropriate function.
 Be conversational and friendly. For destructive operations like deleting, confirm the action by showing what will be deleted.
 
 CRITICAL - Task Identification for Updates/Deletes:
@@ -148,6 +376,21 @@ CRITICAL - Preserve Markdown Formatting in Descriptions:
 - Do NOT convert lists to plain text - keep the "-" bullet points
 - Do NOT add any additional formatting or explanations within the description
 - Copy the description EXACTLY as the user provides it
+
+CRITICAL - Identifying Goals & Habits (same as tasks: reference by title/name, act by ID):
+- Users reference GOALS by their TITLE and HABITS by their NAME, not by ID. Find the match in the context lists below and use its ID for the function call.
+- Goal intent mapping:
+  - "I read 20 more pages", "add 3 to my goal", "log 2 more" → adjustGoalProgress with a positive delta
+  - "mark goal X as achieved/done/complete" → setGoalStatus status "achieved"
+  - "archive goal X" → setGoalStatus "archived"; "make an achieved goal active again" → setGoalStatus "active" (note: goals already archived aren't shown in the context, so you can't reactivate them from chat)
+  - "rename goal X", "change the target/deadline/unit" → updateGoal (NOT adjustGoalProgress)
+  - A goal whose progress type is "tasks" derives its percent from linked tasks — do NOT nudge it; tell the user to complete its tasks instead.
+- Habit intent mapping:
+  - "I meditated", "check in X", "mark habit X done", "did my X today", "drank 3 glasses" → checkInHabit with a positive delta (default +1)
+  - "undo my check-in for X", "I didn't actually do X" → checkInHabit with a negative delta
+  - Only create daily habits — weekly scheduling isn't supported yet.
+- Reminders are READ-ONLY: use listDueReminders to tell the user what's currently due. To add a reminder, tell them to set it on the task in the app.
+- For destructive actions (deleteGoal, deleteHabit), confirm what will be removed before deleting.
 
 Guidelines:
 - Keep responses concise and helpful
@@ -184,8 +427,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get user's tasks for context
-    const userTasks = await getTasks(session.user.id);
+    // Fetch all four pillars for context. getGoals/getHabits/getDueReminders are
+    // session-scoped (no userId param), so they can't be coaxed into an IDOR the
+    // way the older getTasks(userId) signature can.
+    const [userTasks, userGoals, userHabits, dueReminders] = await Promise.all([
+      getTasks(session.user.id),
+      getGoals(),
+      getHabits(),
+      getDueReminders(),
+    ]);
 
     // Build context message with task information
     const taskContext =
@@ -200,6 +450,39 @@ export async function POST(req: NextRequest) {
 
 IMPORTANT: When updating a task, find the task by its TITLE in the list above, then use its ID (the long string after "ID:").`
         : "\n\nUser has no tasks yet.";
+
+    const goalContext =
+      userGoals.length > 0
+        ? `\n\n===== USER'S GOALS =====\n${userGoals
+            .slice(0, 15)
+            .map(
+              (g) =>
+                `• "${g.title}" (ID: ${g.id}, ${goalPercent(g as Goal)}% complete, progress: ${g.progressType}, status: ${g.status}${g.targetDate ? `, target: ${formatUTCDate(new Date(g.targetDate))}` : ""})`,
+            )
+            .join("\n")}${userGoals.length > 15 ? `\n... and ${userGoals.length - 15} more goals` : ""}`
+        : "";
+
+    const habitContext =
+      userHabits.length > 0
+        ? `\n\n===== USER'S HABITS =====\n${userHabits
+            .slice(0, 15)
+            .map((h) => {
+              const s = computeHabitStats(h as Habit);
+              return `• "${h.name}" (ID: ${h.id}, streak: ${s.currentStreak}, today: ${s.todayDone ? "done" : "not yet"}, ${h.frequencyType})`;
+            })
+            .join("\n")}${userHabits.length > 15 ? `\n... and ${userHabits.length - 15} more habits` : ""}`
+        : "";
+
+    const reminderContext =
+      dueReminders.length > 0
+        ? `\n\n===== DUE REMINDERS =====\n${dueReminders
+            .slice(0, 10)
+            .map(
+              (r) =>
+                `• "${r.task?.title ?? "Task"}" reminder due ${formatReminderTime(new Date(r.triggerAt))} (ID: ${r.id})`,
+            )
+            .join("\n")}${dueReminders.length > 10 ? `\n... and ${dueReminders.length - 10} more due reminders` : ""}`
+        : "";
 
     // Ground the assistant in the current date so it can resolve relative dates.
     const now = new Date();
@@ -216,7 +499,10 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: "system", content: systemPrompt },
       { role: "system", content: dateContext },
-      { role: "assistant", content: `Current user context:${taskContext}` },
+      {
+        role: "assistant",
+        content: `Current user context:${taskContext}${goalContext}${habitContext}${reminderContext}`,
+      },
       ...history.map((msg: { role: string; content: string }) => ({
         role: msg.role as "user" | "assistant",
         content: msg.content,
@@ -256,6 +542,15 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
       let result;
       let followUpMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
         [...messages, choice.message];
+
+      // Append a function-result message the model can read on the follow-up call.
+      const pushFunctionResult = (payload: Record<string, unknown>) => {
+        followUpMessages.push({
+          role: "function",
+          name: functionName,
+          content: JSON.stringify(payload),
+        });
+      };
 
       switch (functionName) {
         case "createTask":
@@ -328,6 +623,128 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
             content: JSON.stringify({ tasks }),
           });
           break;
+
+        // ---- Goals ----
+        case "createGoal":
+          result = await createGoal(functionArgs as any);
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : { success: true, goal: result.goal },
+          );
+          break;
+
+        case "updateGoal":
+          result = await updateGoal(
+            functionArgs.id as string,
+            functionArgs as any,
+          );
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : { success: true, goal: result.goal },
+          );
+          break;
+
+        case "adjustGoalProgress":
+          result = await adjustGoalProgress(
+            functionArgs.id as string,
+            functionArgs.delta as number,
+          );
+          pushFunctionResult(
+            result.error ? { error: result.error } : { success: true },
+          );
+          break;
+
+        case "setGoalStatus":
+          result = await setGoalStatus(
+            functionArgs.id as string,
+            functionArgs.status as string,
+          );
+          pushFunctionResult(
+            result.error ? { error: result.error } : { success: true },
+          );
+          break;
+
+        case "deleteGoal":
+          result = await deleteGoal(functionArgs.id as string);
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : { success: true, message: "Goal deleted successfully" },
+          );
+          break;
+
+        case "listGoals": {
+          // Reuse the goals already fetched for context this request.
+          result = userGoals.map((g) => ({
+            id: g.id,
+            title: g.title,
+            percent: goalPercent(g as Goal),
+            status: g.status,
+            progressType: g.progressType,
+            targetDate: g.targetDate
+              ? formatUTCDate(new Date(g.targetDate))
+              : null,
+          }));
+          pushFunctionResult({ goals: result });
+          break;
+        }
+
+        // ---- Habits ----
+        case "createHabit":
+          result = await createHabit(functionArgs as any);
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : { success: true, habit: result.habit },
+          );
+          break;
+
+        case "checkInHabit":
+          result = await checkInHabit(functionArgs as any);
+          pushFunctionResult(
+            result.error ? { error: result.error } : { success: true },
+          );
+          break;
+
+        case "listHabits": {
+          // Reuse the habits already fetched for context this request.
+          result = userHabits.map((h) => {
+            const s = computeHabitStats(h as Habit);
+            return {
+              id: h.id,
+              name: h.name,
+              currentStreak: s.currentStreak,
+              todayDone: s.todayDone,
+              monthlyRate: s.monthlyRate,
+            };
+          });
+          pushFunctionResult({ habits: result });
+          break;
+        }
+
+        case "deleteHabit":
+          result = await deleteHabit(functionArgs.id as string);
+          pushFunctionResult(
+            result.error
+              ? { error: result.error }
+              : { success: true, message: "Habit deleted successfully" },
+          );
+          break;
+
+        // ---- Reminders (read-only) ----
+        case "listDueReminders": {
+          // Reuse the due reminders already fetched for context this request.
+          result = dueReminders.map((r) => ({
+            id: r.id,
+            taskId: r.task?.id,
+            taskTitle: r.task?.title,
+            triggerAt: r.triggerAt,
+          }));
+          pushFunctionResult({ reminders: result });
+          break;
+        }
 
         default:
           return NextResponse.json({

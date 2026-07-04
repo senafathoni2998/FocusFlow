@@ -72,6 +72,40 @@ jest.mock("@/app/actions/tasks", () => ({
   getTasks: (...args: any[]) => mockGetTasks(...args),
 }))
 
+// Mock goal actions (they pull prisma/next-cache, so must be mocked)
+const mockGetGoals = jest.fn()
+const mockCreateGoal = jest.fn()
+const mockUpdateGoal = jest.fn()
+const mockAdjustGoalProgress = jest.fn()
+const mockSetGoalStatus = jest.fn()
+const mockDeleteGoal = jest.fn()
+jest.mock("@/app/actions/goals", () => ({
+  getGoals: (...args: any[]) => mockGetGoals(...args),
+  createGoal: (...args: any[]) => mockCreateGoal(...args),
+  updateGoal: (...args: any[]) => mockUpdateGoal(...args),
+  adjustGoalProgress: (...args: any[]) => mockAdjustGoalProgress(...args),
+  setGoalStatus: (...args: any[]) => mockSetGoalStatus(...args),
+  deleteGoal: (...args: any[]) => mockDeleteGoal(...args),
+}))
+
+// Mock habit actions
+const mockGetHabits = jest.fn()
+const mockCreateHabit = jest.fn()
+const mockCheckInHabit = jest.fn()
+const mockDeleteHabit = jest.fn()
+jest.mock("@/app/actions/habits", () => ({
+  getHabits: (...args: any[]) => mockGetHabits(...args),
+  createHabit: (...args: any[]) => mockCreateHabit(...args),
+  checkInHabit: (...args: any[]) => mockCheckInHabit(...args),
+  deleteHabit: (...args: any[]) => mockDeleteHabit(...args),
+}))
+
+// Mock reminder actions
+const mockGetDueReminders = jest.fn()
+jest.mock("@/app/actions/reminders", () => ({
+  getDueReminders: (...args: any[]) => mockGetDueReminders(...args),
+}))
+
 // Mock auth
 const mockAuth = jest.fn()
 jest.mock("@/lib/auth", () => ({
@@ -93,6 +127,11 @@ describe("Chat API Route", () => {
     jest.clearAllMocks()
     // Set default environment variable
     process.env.GROQ_API_KEY = "test-api-key"
+    // The route fetches all four pillars for context on every request — default
+    // the new pillar getters so the Promise.all always resolves cleanly.
+    mockGetGoals.mockResolvedValue([])
+    mockGetHabits.mockResolvedValue([])
+    mockGetDueReminders.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -863,6 +902,293 @@ describe("Chat API Route", () => {
 
       expect(response.status).toBe(200)
       expect(data.message).toBe("")
+    })
+  })
+
+  // A small helper: first Groq call returns the function_call, second returns text.
+  const mockFunctionCall = (name: string, args: object, finalMessage = "Done!") => {
+    mockChatCreate
+      .mockResolvedValueOnce({
+        choices: [{
+          message: { content: null, function_call: { name, arguments: JSON.stringify(args) } },
+        }],
+      })
+      .mockResolvedValueOnce({
+        choices: [{ message: { content: finalMessage } }],
+      })
+  }
+
+  describe("Function Calling - Goals", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([])
+    })
+
+    it("should call createGoal with the provided args", async () => {
+      const goal = { id: "goal-1", title: "Read 12 books" }
+      mockCreateGoal.mockResolvedValue({ success: true, goal })
+      mockFunctionCall(
+        "createGoal",
+        { title: "Read 12 books", progressType: "numeric", targetValue: 12 },
+        "Created your goal.",
+      )
+
+      const response = await POST(await createRequest({ message: "Set a goal to read 12 books" }))
+      const data = await response.json()
+
+      expect(mockCreateGoal).toHaveBeenCalledWith({
+        title: "Read 12 books",
+        progressType: "numeric",
+        targetValue: 12,
+      })
+      expect(data.functionCall?.name).toBe("createGoal")
+      expect(data.functionCall?.result?.goal).toEqual(goal)
+
+      // The action result must be marshaled back into the follow-up completion
+      // as a function message the model reads to compose its reply.
+      const followUp = mockChatCreate.mock.calls[1][0].messages
+      const fnMsg = followUp.find((m: any) => m.role === "function")
+      expect(fnMsg?.name).toBe("createGoal")
+      expect(JSON.parse(fnMsg.content)).toEqual({ success: true, goal })
+    })
+
+    it("should marshal updateGoal into (id, args)", async () => {
+      mockUpdateGoal.mockResolvedValue({ success: true, goal: { id: "goal-1" } })
+      mockFunctionCall("updateGoal", { id: "goal-1", title: "New title" })
+
+      await POST(await createRequest({ message: "Rename goal" }))
+
+      expect(mockUpdateGoal).toHaveBeenCalledWith("goal-1", {
+        id: "goal-1",
+        title: "New title",
+      })
+    })
+
+    it("should marshal adjustGoalProgress into (id, delta)", async () => {
+      mockAdjustGoalProgress.mockResolvedValue({ success: true })
+      mockFunctionCall("adjustGoalProgress", { id: "goal-1", delta: 3 })
+
+      await POST(await createRequest({ message: "I read 3 more books" }))
+
+      expect(mockAdjustGoalProgress).toHaveBeenCalledWith("goal-1", 3)
+    })
+
+    it("should marshal setGoalStatus into (id, status)", async () => {
+      mockSetGoalStatus.mockResolvedValue({ success: true })
+      mockFunctionCall("setGoalStatus", { id: "goal-1", status: "achieved" })
+
+      await POST(await createRequest({ message: "Mark my goal achieved" }))
+
+      expect(mockSetGoalStatus).toHaveBeenCalledWith("goal-1", "achieved")
+    })
+
+    it("should surface a goal action error to the follow-up", async () => {
+      mockDeleteGoal.mockResolvedValue({ error: "Goal not found" })
+      mockFunctionCall("deleteGoal", { id: "missing" })
+
+      const response = await POST(await createRequest({ message: "Delete goal" }))
+      const data = await response.json()
+
+      expect(mockDeleteGoal).toHaveBeenCalledWith("missing")
+      expect(data.functionCall?.result?.error).toBe("Goal not found")
+    })
+
+    it("should return a trimmed summary for listGoals", async () => {
+      mockGetGoals.mockResolvedValue([
+        {
+          id: "goal-1",
+          title: "Read 12 books",
+          progressType: "numeric",
+          targetValue: 12,
+          currentValue: 6,
+          manualProgress: 0,
+          status: "active",
+          targetDate: null,
+        },
+      ])
+      mockFunctionCall("listGoals", {})
+
+      const response = await POST(await createRequest({ message: "Show my goals" }))
+      const data = await response.json()
+
+      expect(data.functionCall?.name).toBe("listGoals")
+      expect(data.functionCall?.result).toEqual([
+        {
+          id: "goal-1",
+          title: "Read 12 books",
+          percent: 50,
+          status: "active",
+          progressType: "numeric",
+          targetDate: null,
+        },
+      ])
+    })
+  })
+
+  describe("Function Calling - Habits", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([])
+    })
+
+    it("should call createHabit with the provided args", async () => {
+      mockCreateHabit.mockResolvedValue({ success: true, habit: { id: "h-1", name: "Meditate" } })
+      mockFunctionCall("createHabit", { name: "Meditate", goalType: "achieve" })
+
+      await POST(await createRequest({ message: "Add a meditate habit" }))
+
+      expect(mockCreateHabit).toHaveBeenCalledWith({ name: "Meditate", goalType: "achieve" })
+    })
+
+    it("should pass checkInHabit args through unchanged", async () => {
+      mockCheckInHabit.mockResolvedValue({ success: true })
+      mockFunctionCall("checkInHabit", { habitId: "h-1", delta: 1 })
+
+      const response = await POST(await createRequest({ message: "I meditated today" }))
+      const data = await response.json()
+
+      expect(mockCheckInHabit).toHaveBeenCalledWith({ habitId: "h-1", delta: 1 })
+      expect(data.functionCall?.result?.success).toBe(true)
+
+      const followUp = mockChatCreate.mock.calls[1][0].messages
+      const fnMsg = followUp.find((m: any) => m.role === "function")
+      expect(fnMsg?.name).toBe("checkInHabit")
+      expect(JSON.parse(fnMsg.content)).toEqual({ success: true })
+    })
+
+    it("should return a streak summary for listHabits", async () => {
+      mockGetHabits.mockResolvedValue([
+        {
+          id: "h-1",
+          name: "Meditate",
+          frequencyType: "daily",
+          weekdays: [],
+          goalType: "achieve",
+          targetAmount: 1,
+          checkIns: [],
+          createdAt: new Date(),
+        },
+      ])
+      mockFunctionCall("listHabits", {})
+
+      const response = await POST(await createRequest({ message: "How are my habits?" }))
+      const data = await response.json()
+
+      expect(data.functionCall?.name).toBe("listHabits")
+      // A never-checked-in habit created today: 0 streak, not done, 0% this month.
+      expect(data.functionCall?.result).toEqual([
+        { id: "h-1", name: "Meditate", currentStreak: 0, todayDone: false, monthlyRate: 0 },
+      ])
+    })
+  })
+
+  describe("Function Calling - Reminders", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([])
+    })
+
+    it("should return due reminders with their task", async () => {
+      const triggerAt = new Date("2026-07-04T09:00:00Z")
+      mockGetDueReminders.mockResolvedValue([
+        { id: "r-1", triggerAt, task: { id: "task-1", title: "Submit report" } },
+      ])
+      mockFunctionCall("listDueReminders", {})
+
+      const response = await POST(await createRequest({ message: "What reminders are due?" }))
+      const data = await response.json()
+
+      expect(mockGetDueReminders).toHaveBeenCalled()
+      expect(data.functionCall?.result).toEqual([
+        { id: "r-1", taskId: "task-1", taskTitle: "Submit report", triggerAt: triggerAt.toISOString() },
+      ])
+
+      const followUp = mockChatCreate.mock.calls[1][0].messages
+      const fnMsg = followUp.find((m: any) => m.role === "function")
+      expect(fnMsg?.name).toBe("listDueReminders")
+      expect(JSON.parse(fnMsg.content).reminders).toHaveLength(1)
+    })
+  })
+
+  describe("Pillar Context", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([])
+    })
+
+    const contextMessage = () => {
+      const messages = mockChatCreate.mock.calls[0][0].messages
+      return messages.find(
+        (m: any) => m.role === "assistant" && typeof m.content === "string" && m.content.startsWith("Current user context:"),
+      )
+    }
+
+    it("should include goals in context", async () => {
+      mockGetGoals.mockResolvedValue([
+        {
+          id: "goal-1",
+          title: "Run a marathon",
+          progressType: "manual",
+          manualProgress: 40,
+          currentValue: 0,
+          status: "active",
+          targetDate: null,
+        },
+      ])
+      mockChatCreate.mockResolvedValue({ choices: [{ message: { content: "ok" } }] })
+
+      await POST(await createRequest({ message: "hi" }))
+
+      const ctx = contextMessage()
+      expect(ctx.content).toContain("USER'S GOALS")
+      expect(ctx.content).toContain("Run a marathon")
+      expect(ctx.content).toContain("40% complete")
+    })
+
+    it("should include habits in context", async () => {
+      mockGetHabits.mockResolvedValue([
+        {
+          id: "h-1",
+          name: "Drink water",
+          frequencyType: "daily",
+          weekdays: [],
+          goalType: "achieve",
+          targetAmount: 1,
+          checkIns: [],
+          createdAt: new Date(),
+        },
+      ])
+      mockChatCreate.mockResolvedValue({ choices: [{ message: { content: "ok" } }] })
+
+      await POST(await createRequest({ message: "hi" }))
+
+      const ctx = contextMessage()
+      expect(ctx.content).toContain("USER'S HABITS")
+      expect(ctx.content).toContain("Drink water")
+    })
+
+    it("should include due reminders in context", async () => {
+      mockGetDueReminders.mockResolvedValue([
+        { id: "r-1", triggerAt: new Date("2026-07-04T09:00:00Z"), task: { id: "t-1", title: "Call dentist" } },
+      ])
+      mockChatCreate.mockResolvedValue({ choices: [{ message: { content: "ok" } }] })
+
+      await POST(await createRequest({ message: "hi" }))
+
+      const ctx = contextMessage()
+      expect(ctx.content).toContain("DUE REMINDERS")
+      expect(ctx.content).toContain("Call dentist")
+    })
+
+    it("should omit pillar sections when everything is empty", async () => {
+      mockChatCreate.mockResolvedValue({ choices: [{ message: { content: "ok" } }] })
+
+      await POST(await createRequest({ message: "hi" }))
+
+      const ctx = contextMessage()
+      expect(ctx.content).not.toContain("USER'S GOALS")
+      expect(ctx.content).not.toContain("USER'S HABITS")
+      expect(ctx.content).not.toContain("DUE REMINDERS")
     })
   })
 })

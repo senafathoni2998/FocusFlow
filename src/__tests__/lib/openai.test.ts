@@ -8,6 +8,16 @@
  * - Various task/session states
  */
 
+// Controllable OpenAI SDK mock so we can exercise the with-API-key path (the
+// no-key tests never reach the client, so the mock is inert for them).
+const mockCreate = jest.fn()
+jest.mock("openai", () => ({
+  __esModule: true,
+  default: jest.fn(() => ({
+    chat: { completions: { create: (...args: any[]) => mockCreate(...args) } },
+  })),
+}))
+
 describe("OpenAI Service", () => {
   let generateInsights: any
   const originalEnv = process.env
@@ -283,5 +293,124 @@ describe("OpenAI Service", () => {
         expect(insight.length).toBeGreaterThan(0)
       })
     })
+  })
+
+  describe("generateInsights - goal & habit enrichment (no API key)", () => {
+    // UTC midnight of (local today - offset days) — matches how check-ins store.
+    const utcDay = (offset: number) => {
+      const n = new Date()
+      return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate() - offset))
+    }
+
+    const mockHabit = (checkInOffsets: number[]) => ({
+      id: "h",
+      name: "Meditate",
+      frequencyType: "daily",
+      weekdays: [] as number[],
+      goalType: "achieve",
+      targetAmount: 1,
+      createdAt: utcDay(60),
+      checkIns: checkInOffsets.map((o, i) => ({ id: String(i), date: utcDay(o), amount: 1 })),
+    })
+
+    it("flags goals past their target date", async () => {
+      const goals = [
+        { id: "g1", title: "Ship v1", progressType: "manual", status: "active", targetDate: utcDay(3) },
+      ]
+
+      const result = await generateInsights([], [], goals, [])
+
+      expect(result.insights.some((i: string) => i.includes("past their target date"))).toBe(true)
+    })
+
+    it("nudges breaking active goals into tasks when none are overdue", async () => {
+      const goals = [
+        { id: "g1", title: "Learn piano", progressType: "manual", status: "active", targetDate: null },
+      ]
+
+      const result = await generateInsights([], [], goals, [])
+
+      expect(result.insights.some((i: string) => i.includes("Break each active goal"))).toBe(true)
+    })
+
+    it("celebrates a habit streak of 3+ days", async () => {
+      const habits = [mockHabit([0, 1, 2])]
+
+      const result = await generateInsights([], [], [], habits)
+
+      expect(result.insights.some((i: string) => i.includes("habit streak"))).toBe(true)
+    })
+
+    it("reminds about habits still open today when there's no streak", async () => {
+      const habits = [mockHabit([1])] // only yesterday → streak 1, today not done
+
+      const result = await generateInsights([], [], [], habits)
+
+      expect(result.insights.some((i: string) => i.includes("check-in today"))).toBe(true)
+    })
+
+    it("adds nothing goal/habit-related when both are empty", async () => {
+      const result = await generateInsights([], [createMockTask("todo", "medium", "T")])
+
+      expect(result.insights.some((i: string) => i.includes("target date") || i.includes("habit streak") || i.includes("check-in today") || i.includes("Break each active goal"))).toBe(false)
+    })
+  })
+})
+
+describe("OpenAI Service - degraded paths keep goal/habit nudges (API key set)", () => {
+  const originalEnv = process.env
+  let generateInsights: any
+
+  const utcDay = (offset: number) => {
+    const n = new Date()
+    return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate() - offset))
+  }
+  const streakHabit = () => ({
+    id: "h",
+    name: "Meditate",
+    frequencyType: "daily",
+    weekdays: [] as number[],
+    goalType: "achieve",
+    targetAmount: 1,
+    createdAt: utcDay(60),
+    checkIns: [0, 1, 2].map((o, i) => ({ id: String(i), date: utcDay(o), amount: 1 })),
+  })
+  const overdueGoal = () => ({
+    id: "g",
+    title: "Ship v1",
+    progressType: "manual",
+    status: "active",
+    targetDate: utcDay(3),
+  })
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    jest.resetModules()
+    process.env = { ...originalEnv, GROQ_API_KEY: "test-key" }
+    const mod = await import("@/lib/openai")
+    generateInsights = mod.generateInsights
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+  })
+
+  it("keeps goal/habit nudges when Groq throws", async () => {
+    mockCreate.mockRejectedValue(new Error("rate limited"))
+
+    const result = await generateInsights([], [], [overdueGoal()], [streakHabit()])
+
+    expect(result.error).toBe("Failed to generate AI insights")
+    expect(result.insights.some((i: string) => i.includes("past their target date"))).toBe(true)
+    expect(result.insights.some((i: string) => i.includes("habit streak"))).toBe(true)
+  })
+
+  it("keeps goal/habit nudges when Groq returns empty content", async () => {
+    mockCreate.mockResolvedValue({ choices: [{ message: { content: "" } }] })
+
+    const result = await generateInsights([], [], [overdueGoal()], [streakHabit()])
+
+    expect(result.insights.some((i: string) => i.includes("past their target date"))).toBe(true)
+    expect(result.insights.some((i: string) => i.includes("habit streak"))).toBe(true)
   })
 })

@@ -9,18 +9,31 @@
 
 import { getSuggestedActions } from "@/lib/chatAssistant"
 
-// Mock the getTasks action
+// Mock the pillar getters (they pull prisma/next-cache, so must be mocked).
 jest.mock("@/app/actions/tasks", () => ({
   getTasks: jest.fn(),
+}))
+jest.mock("@/app/actions/goals", () => ({
+  getGoals: jest.fn(),
+}))
+jest.mock("@/app/actions/habits", () => ({
+  getHabits: jest.fn(),
 }))
 
 describe("Chat Assistant - Suggested Actions", () => {
   let mockGetTasks: jest.Mock
+  let mockGetGoals: jest.Mock
+  let mockGetHabits: jest.Mock
 
   beforeEach(() => {
     jest.clearAllMocks()
 
     mockGetTasks = require("@/app/actions/tasks").getTasks
+    mockGetGoals = require("@/app/actions/goals").getGoals
+    mockGetHabits = require("@/app/actions/habits").getHabits
+    // Clean per-test defaults so nothing leaks between cases.
+    mockGetGoals.mockResolvedValue([])
+    mockGetHabits.mockResolvedValue([])
   })
 
   const createMockTask = (status: string, priority: string, dueDate: Date | null = null, title: string = "Task") => ({
@@ -247,6 +260,95 @@ describe("Chat Assistant - Suggested Actions", () => {
 
       // High priority and overdue both exist
       expect(suggestions.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe("Goal & habit suggestions", () => {
+    const mockGoal = (status: string) => ({
+      id: Math.random().toString(),
+      title: "Goal",
+      icon: "🎯",
+      color: "primary",
+      progressType: "manual",
+      currentValue: 0,
+      manualProgress: 0,
+      status,
+    })
+
+    const mockHabit = (checkIns: any[] = []) => ({
+      id: Math.random().toString(),
+      name: "Meditate",
+      icon: "✅",
+      color: "primary",
+      frequencyType: "daily",
+      weekdays: [] as number[],
+      weeklyTarget: 1,
+      goalType: "achieve",
+      targetAmount: 1,
+      unit: null,
+      archived: false,
+      createdAt: new Date(),
+      checkIns,
+    })
+
+    // A check-in stored the way checkInHabit stores it: UTC midnight of today's
+    // local calendar day, so computeHabitStats scores it as "done today".
+    const todayCheckIn = () => {
+      const now = new Date()
+      return {
+        id: "ci",
+        date: new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())),
+        amount: 1,
+      }
+    }
+
+    it("suggests showing goals progress when an active goal exists", async () => {
+      mockGetTasks.mockResolvedValue([])
+      mockGetGoals.mockResolvedValue([mockGoal("active")])
+
+      const suggestions = await getSuggestedActions()
+
+      expect(suggestions).toContain("Show my goals progress")
+    })
+
+    it("does not suggest goals progress when only achieved/archived goals exist", async () => {
+      mockGetTasks.mockResolvedValue([])
+      mockGetGoals.mockResolvedValue([mockGoal("achieved"), mockGoal("archived")])
+
+      const suggestions = await getSuggestedActions()
+
+      expect(suggestions).not.toContain("Show my goals progress")
+    })
+
+    it("suggests checking in habits when a habit isn't done today", async () => {
+      mockGetTasks.mockResolvedValue([])
+      mockGetHabits.mockResolvedValue([mockHabit([])])
+
+      const suggestions = await getSuggestedActions()
+
+      expect(suggestions).toContain("Check in my habits")
+    })
+
+    it("does not suggest checking in habits when all are done today", async () => {
+      mockGetTasks.mockResolvedValue([])
+      mockGetHabits.mockResolvedValue([mockHabit([todayCheckIn()])])
+
+      const suggestions = await getSuggestedActions()
+
+      expect(suggestions).not.toContain("Check in my habits")
+    })
+
+    it("does not blank suggestions when a pillar getter rejects", async () => {
+      mockGetTasks.mockResolvedValue([createMockTask("todo", "medium")])
+      mockGetGoals.mockRejectedValue(new Error("boom"))
+      mockGetHabits.mockRejectedValue(new Error("boom"))
+
+      const suggestions = await getSuggestedActions()
+
+      // A rejected goal/habit read is swallowed (→ []); we still return the
+      // task-derived defaults rather than throwing or blanking.
+      expect(suggestions.length).toBeGreaterThan(0)
+      expect(suggestions).toContain("Show all my tasks")
     })
   })
 })

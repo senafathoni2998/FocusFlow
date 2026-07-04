@@ -1,4 +1,6 @@
 import OpenAI from 'openai'
+import { computeHabitStats } from '@/lib/habitStats'
+import type { Habit } from '@/types/habit'
 
 // Using Groq for fast, free AI inference
 const openai = new OpenAI({
@@ -6,11 +8,34 @@ const openai = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1"
 })
 
-export async function generateInsights(userSessions: any[], userTasks: any[]) {
+/**
+ * Count goals whose calendar-day deadline has passed and aren't achieved yet.
+ * targetDate is stored at UTC midnight of the deadline day, so we compare CALENDAR
+ * DAYS (target's UTC day vs now's LOCAL day) rather than instants — the same
+ * timezone-safe convention goalStats.daysUntil uses. An instant compare would flag
+ * a goal overdue up to a day early for non-UTC users.
+ */
+function overdueGoalCount(userGoals: any[]): number {
+  const now = new Date()
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  return userGoals.filter((g) => {
+    if (!g.targetDate || g.status === "achieved") return false
+    const t = new Date(g.targetDate)
+    const target = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())
+    return target < today
+  }).length
+}
+
+export async function generateInsights(
+  userSessions: any[],
+  userTasks: any[],
+  userGoals: any[] = [],
+  userHabits: any[] = [],
+) {
   if (!process.env.GROQ_API_KEY) {
     return {
       error: "Groq API key not configured",
-      insights: getDefaultInsights(userSessions, userTasks)
+      insights: getDefaultInsights(userSessions, userTasks, userGoals, userHabits)
     }
   }
 
@@ -23,7 +48,9 @@ export async function generateInsights(userSessions: any[], userTasks: any[]) {
       return acc
     }, 0)
 
-    const systemPrompt = `You are a productivity coach. Analyze the user's work patterns and provide 3-5 specific, actionable recommendations to improve productivity. Keep each recommendation concise (1-2 sentences) and practical.`
+    const activeGoals = userGoals.filter((g) => g.status === "active")
+
+    const systemPrompt = `You are a productivity coach. Analyze the user's work patterns across their tasks, goals, and habits, and provide 3-5 specific, actionable recommendations to improve productivity. Keep each recommendation concise (1-2 sentences) and practical.`
 
     const userPrompt = `Based on the following data:
 - Total focus sessions: ${userSessions.length}
@@ -33,6 +60,8 @@ export async function generateInsights(userSessions: any[], userTasks: any[]) {
 - Completed tasks: ${userTasks.filter((t) => t.status === "completed").length}
 - Tasks in progress: ${userTasks.filter((t) => t.status === "in-progress").length}
 - Tasks pending: ${userTasks.filter((t) => t.status === "todo").length}
+- Active goals: ${activeGoals.length} (overdue: ${overdueGoalCount(userGoals)})
+- Habits tracked: ${userHabits.length}
 
 Recent sessions: ${JSON.stringify(completedSessions.slice(0, 5).map(s => ({
   type: s.type,
@@ -45,6 +74,17 @@ Pending tasks: ${JSON.stringify(userTasks.filter((t) => t.status !== "completed"
   priority: t.priority,
   status: t.status
 })))}
+
+Active goals: ${JSON.stringify(activeGoals.slice(0, 5).map(g => ({
+  title: g.title,
+  progressType: g.progressType,
+  status: g.status
+})))}
+
+Habits: ${JSON.stringify(userHabits.slice(0, 5).map(h => {
+  const s = computeHabitStats(h as Habit)
+  return { name: h.name, streak: s.currentStreak, doneToday: s.todayDone }
+}))}
 
 Provide 3-5 specific, actionable recommendations to improve productivity.`
 
@@ -69,18 +109,25 @@ Provide 3-5 specific, actionable recommendations to improve productivity.`
       .slice(0, 5)
 
     return {
-      insights: bulletPoints.length > 0 ? bulletPoints : getDefaultInsights(userSessions, userTasks)
+      insights: bulletPoints.length > 0
+        ? bulletPoints
+        : getDefaultInsights(userSessions, userTasks, userGoals, userHabits)
     }
   } catch (error) {
     console.error("Groq API error:", error)
     return {
       error: "Failed to generate AI insights",
-      insights: getDefaultInsights(userSessions, userTasks)
+      insights: getDefaultInsights(userSessions, userTasks, userGoals, userHabits)
     }
   }
 }
 
-function getDefaultInsights(userSessions: any[], userTasks: any[]) {
+function getDefaultInsights(
+  userSessions: any[],
+  userTasks: any[],
+  userGoals: any[] = [],
+  userHabits: any[] = [],
+) {
   const insights = []
 
   const completedTasks = userTasks.filter((t) => t.status === "completed").length
@@ -102,6 +149,25 @@ function getDefaultInsights(userSessions: any[], userTasks: any[]) {
     insights.push("🚀 Start with short 25-minute Pomodoro sessions to build momentum.")
   }
 
+  // Goal-derived nudges.
+  const overdueGoals = overdueGoalCount(userGoals)
+  if (overdueGoals > 0) {
+    insights.push(`⏰ You have ${overdueGoals} goal${overdueGoals > 1 ? "s" : ""} past their target date — review and reschedule or push them forward.`)
+  } else if (userGoals.some((g) => g.status === "active")) {
+    insights.push("🎯 Break each active goal into concrete next-step tasks to keep momentum going.")
+  }
+
+  // Habit-derived nudges: celebrate a streak, or flag habits still open today.
+  // Compute stats once per habit, then derive both signals from that.
+  const habitStats = userHabits.map((h) => computeHabitStats(h as Habit))
+  const bestStreak = habitStats.reduce((max, s) => Math.max(max, s.currentStreak), 0)
+  const pendingHabitsToday = habitStats.filter((s) => !s.todayDone).length
+  if (bestStreak >= 3) {
+    insights.push(`🔥 You're on a ${bestStreak}-day habit streak — keep it alive today!`)
+  } else if (pendingHabitsToday > 0) {
+    insights.push(`📅 ${pendingHabitsToday} habit${pendingHabitsToday > 1 ? "s" : ""} still need a check-in today.`)
+  }
+
   if (userTasks.length === 0) {
     insights.push("📝 Create your first task to get started with tracking your productivity!")
   }
@@ -110,5 +176,5 @@ function getDefaultInsights(userSessions: any[], userTasks: any[]) {
     insights.push("💪 Keep up the good work! Regular task management helps maintain productivity.")
   }
 
-  return insights
+  return insights.slice(0, 5)
 }
