@@ -30,9 +30,10 @@ export async function GET(request: Request) {
       orderBy: { startTime: "desc" }
     })
 
-    // Fetch tasks
+    // Fetch tasks — top-level only. Subtasks are counted within their parent's
+    // progress, not as standalone tasks (matches the board/list/sidebar).
     const tasks = await prisma.task.findMany({
-      where: { userId: session.user.id }
+      where: { userId: session.user.id, parentTaskId: null }
     })
 
     // Calculate daily focus time

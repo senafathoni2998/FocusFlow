@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { updateTask } from "@/app/actions/tasks"
+import { updateTask, createTask, deleteTask } from "@/app/actions/tasks"
 import { getLists } from "@/app/actions/lists"
-import type { ListSummary } from "@/types/task"
+import type { ListSummary, Task } from "@/types/task"
 
 // Helper function to insert markdown around selected text
 const insertMarkdown = (
@@ -45,6 +45,7 @@ interface EditTaskFormProps {
     dueDate?: Date | null
     listId?: string | null
   }
+  subtasks?: Task[]
   onClose?: () => void
   onUpdate?: () => void
 }
@@ -60,7 +61,7 @@ const toDateInputValue = (date: Date | string): string => {
   return `${y}-${m}-${day}`
 }
 
-export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormProps) {
+export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: EditTaskFormProps) {
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description || "")
   const [priority, setPriority] = useState(task.priority)
@@ -71,11 +72,33 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
   const [lists, setLists] = useState<ListSummary[]>([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [newSubtask, setNewSubtask] = useState("")
+  const [subtaskBusy, setSubtaskBusy] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     getLists().then(setLists)
   }, [])
+
+  const addSubtask = async () => {
+    const t = newSubtask.trim()
+    if (!t || subtaskBusy) return
+    setSubtaskBusy(true)
+    await createTask({ title: t, parentTaskId: task.id, listId: task.listId ?? undefined })
+    setNewSubtask("")
+    setSubtaskBusy(false)
+    onUpdate?.()
+  }
+
+  const toggleSubtask = async (sub: Task) => {
+    await updateTask(sub.id, { status: sub.status === "completed" ? "todo" : "completed" })
+    onUpdate?.()
+  }
+
+  const removeSubtask = async (id: string) => {
+    await deleteTask(id)
+    onUpdate?.()
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget
@@ -204,6 +227,64 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
             </option>
           ))}
         </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Subtasks</label>
+        {subtasks && subtasks.length > 0 ? (
+          <ul className="space-y-1 mb-2">
+            {subtasks.map((sub) => (
+              <li key={sub.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={sub.status === "completed"}
+                  onChange={() => toggleSubtask(sub)}
+                  className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  aria-label={`Complete subtask ${sub.title}`}
+                />
+                <span
+                  className={`flex-1 text-sm ${sub.status === "completed" ? "line-through text-gray-400" : "text-gray-700"}`}
+                >
+                  {sub.title}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeSubtask(sub.id)}
+                  aria-label={`Delete subtask ${sub.title}`}
+                  className="text-gray-400 hover:text-danger-600 text-xs"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-400 mb-2">No subtasks yet.</p>
+        )}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newSubtask}
+            onChange={(e) => setNewSubtask(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                addSubtask()
+              }
+            }}
+            placeholder="Add a subtask…"
+            aria-label="Add a subtask"
+            className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
+          />
+          <button
+            type="button"
+            onClick={addSubtask}
+            disabled={subtaskBusy || !newSubtask.trim()}
+            className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            Add
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3 pt-4">

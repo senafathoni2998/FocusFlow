@@ -19,6 +19,8 @@ import EditTaskForm from "@/components/tasks/EditTaskForm"
 // Mock server actions
 jest.mock("@/app/actions/tasks", () => ({
   updateTask: jest.fn(),
+  createTask: jest.fn().mockResolvedValue({ success: true }),
+  deleteTask: jest.fn().mockResolvedValue({ success: true }),
 }))
 
 // EditTaskForm fetches lists on mount for its List dropdown.
@@ -627,6 +629,46 @@ describe("EditTaskForm Component", () => {
         expect(mockOnUpdate).toHaveBeenCalled()
         expect(mockOnClose).toHaveBeenCalled()
       })
+    })
+  })
+
+  describe("Subtasks", () => {
+    it("renders existing subtasks and toggles completion", async () => {
+      render(
+        <EditTaskForm
+          task={mockTask}
+          subtasks={[{ id: "s1", title: "Sub A", status: "todo" }] as any}
+        />
+      )
+      expect(screen.getByText("Sub A")).toBeInTheDocument()
+      await userEvent.click(screen.getByLabelText("Complete subtask Sub A"))
+      await waitFor(() =>
+        expect(mockUpdateTask).toHaveBeenCalledWith("s1", { status: "completed" })
+      )
+    })
+
+    it("adds a subtask via the input", async () => {
+      const createTask = require("@/app/actions/tasks").createTask
+      render(<EditTaskForm task={mockTask} />)
+      await userEvent.type(screen.getByLabelText("Add a subtask"), "New sub")
+      await userEvent.click(screen.getByRole("button", { name: "Add" }))
+      await waitFor(() =>
+        expect(createTask).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "New sub", parentTaskId: "task-1" })
+        )
+      )
+    })
+
+    it("deletes a subtask", async () => {
+      const deleteTask = require("@/app/actions/tasks").deleteTask
+      render(
+        <EditTaskForm
+          task={mockTask}
+          subtasks={[{ id: "s1", title: "Sub A", status: "todo" }] as any}
+        />
+      )
+      await userEvent.click(screen.getByLabelText("Delete subtask Sub A"))
+      await waitFor(() => expect(deleteTask).toHaveBeenCalledWith("s1"))
     })
   })
 })

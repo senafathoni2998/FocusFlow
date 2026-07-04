@@ -6,9 +6,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import EditTaskForm from "./EditTaskForm";
 import type { Task } from "@/types/task";
+import { subtaskProgress } from "@/lib/subtasks";
 
 interface TaskCardProps {
   task: Task;
+  subtasks?: Task[];
   onUpdate?: () => void;
 }
 
@@ -26,9 +28,10 @@ const statusColors = {
   "wont-do": "bg-gray-200 text-gray-600 line-through",
 };
 
-export default function TaskCard({ task, onUpdate }: TaskCardProps) {
+export default function TaskCard({ task, subtasks, onUpdate }: TaskCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { done, total } = subtaskProgress(subtasks);
 
   const handleStatusChange = async (newStatus: string) => {
     await updateTask(task.id, { status: newStatus });
@@ -131,6 +134,14 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
               Due: {formatDate(task.dueDate)}
             </span>
           )}
+          {total > 0 && (
+            <span
+              className={`text-xs px-2 py-1 rounded-full ${done === total ? "bg-success-100 text-success-800" : "bg-gray-100 text-gray-700"}`}
+              title="Subtasks completed"
+            >
+              ☑ {done}/{total}
+            </span>
+          )}
         </div>
 
         <div className="flex gap-3">
@@ -178,6 +189,7 @@ export default function TaskCard({ task, onUpdate }: TaskCardProps) {
               </div>
               <EditTaskForm
                 task={task}
+                subtasks={subtasks}
                 onClose={() => setIsEditing(false)}
                 onUpdate={onUpdate}
               />

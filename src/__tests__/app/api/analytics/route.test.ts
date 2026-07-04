@@ -265,7 +265,7 @@ describe("Analytics API Route", () => {
       await GET(request)
 
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
-        where: { userId: "user-123" }
+        where: { userId: "user-123", parentTaskId: null }
       })
     })
 

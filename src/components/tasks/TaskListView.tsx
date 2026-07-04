@@ -10,6 +10,8 @@ interface TaskListViewProps {
   /** Client-side "now"; null until mounted (keeps SSR deterministic). */
   now: Date | null
   onUpdate?: () => void
+  /** parentTaskId -> its subtasks, for the per-card progress badge / checklist. */
+  subtasksByParent?: Record<string, Task[]>
 }
 
 /**
@@ -17,7 +19,7 @@ interface TaskListViewProps {
  * Before mount (`now === null`) it renders a flat list so server and client
  * markup agree; after mount it groups by due-date band.
  */
-export default function TaskListView({ tasks, now, onUpdate }: TaskListViewProps) {
+export default function TaskListView({ tasks, now, onUpdate, subtasksByParent }: TaskListViewProps) {
   const buckets = useMemo(
     () => (now ? bucketByHorizon(tasks, now) : null),
     [tasks, now]
@@ -35,7 +37,7 @@ export default function TaskListView({ tasks, now, onUpdate }: TaskListViewProps
     return (
       <div className="space-y-3">
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onUpdate={onUpdate} />
+          <TaskCard key={task.id} task={task} subtasks={subtasksByParent?.[task.id]} onUpdate={onUpdate} />
         ))}
       </div>
     )
@@ -56,7 +58,7 @@ export default function TaskListView({ tasks, now, onUpdate }: TaskListViewProps
           </div>
           <div className="space-y-3">
             {bucket.tasks.map((task) => (
-              <TaskCard key={task.id} task={task} onUpdate={onUpdate} />
+              <TaskCard key={task.id} task={task} subtasks={subtasksByParent?.[task.id]} onUpdate={onUpdate} />
             ))}
           </div>
         </section>

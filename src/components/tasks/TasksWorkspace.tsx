@@ -13,6 +13,7 @@ import { isTerminalStatus } from "@/lib/taskConstants"
 import { useTaskUpdates } from "@/hooks/useTaskUpdates"
 import { reorderTask } from "@/app/actions/tasks"
 import { createList, deleteList } from "@/app/actions/lists"
+import { groupSubtasksByParent, topLevelTasks } from "@/lib/subtasks"
 import TaskBoard from "./TaskBoard"
 import TaskListView from "./TaskListView"
 import SmartListSidebar from "./SmartListSidebar"
@@ -91,6 +92,12 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
     [searchParams]
   )
 
+  // Subtasks (tasks with a parent) never appear as top-level cards; they surface
+  // inside their parent. Views operate on top-level tasks; each parent's children
+  // are threaded to its card.
+  const topLevel = useMemo(() => topLevelTasks(localTasks), [localTasks])
+  const subtasksByParent = useMemo(() => groupSubtasksByParent(localTasks), [localTasks])
+
   // Horizon filtering is the only time-dependent part; before mount we force
   // horizon "all" so server markup and first client render agree (no hydration
   // mismatch), then re-filter once `now` is set.
@@ -98,8 +105,8 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
     const effective: TaskFilters = now
       ? filters
       : { ...filters, horizon: "all", custom: undefined }
-    return applyFilters(localTasks, effective, now ?? new Date(0))
-  }, [localTasks, filters, now])
+    return applyFilters(topLevel, effective, now ?? new Date(0))
+  }, [topLevel, filters, now])
 
   // Manual drag-reorder is only meaningful (and collision-safe) when the board
   // shows the complete, manually-ordered set — not a filtered subset.
@@ -251,7 +258,7 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
 
       <div className="flex flex-col lg:flex-row gap-6">
         <SmartListSidebar
-          tasks={localTasks}
+          tasks={topLevel}
           now={now}
           activeHorizon={filters.horizon}
           onSelectHorizon={handleSelectHorizon}
@@ -276,9 +283,15 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
               onReorder={handleReorder}
               onUpdate={handleUpdate}
               reorderable={reorderable}
+              subtasksByParent={subtasksByParent}
             />
           ) : (
-            <TaskListView tasks={visible} now={now} onUpdate={handleUpdate} />
+            <TaskListView
+              tasks={visible}
+              now={now}
+              onUpdate={handleUpdate}
+              subtasksByParent={subtasksByParent}
+            />
           )}
         </div>
       </div>

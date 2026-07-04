@@ -58,6 +58,7 @@ const mk = (id: string, o: Partial<Task> = {}): Task =>
     dueDate: o.dueDate ?? null,
     order: o.order ?? 0,
     listId: o.listId ?? null,
+    parentTaskId: o.parentTaskId ?? null,
   } as Task)
 
 const tasks: Task[] = [
@@ -165,6 +166,11 @@ describe("TasksWorkspace", () => {
   it("filters tasks to the selected list", () => {
     mockSearch = "list=l1"
     render(<TasksWorkspace tasks={[mk("w", { listId: "l1" }), mk("i", {})]} lists={testLists} />)
+    expect(screen.getByTestId("board")).toHaveAttribute("data-count", "1")
+  })
+
+  it("excludes subtasks (parentTaskId set) from the top-level views", () => {
+    render(<TasksWorkspace tasks={[mk("p"), mk("s", { parentTaskId: "p" })]} lists={testLists} />)
     expect(screen.getByTestId("board")).toHaveAttribute("data-count", "1")
   })
 })

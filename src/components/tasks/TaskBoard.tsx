@@ -48,9 +48,11 @@ interface TaskBoardProps {
   onUpdate?: () => void
   /** Enable drag-and-drop reordering (only when the full set is shown). */
   reorderable?: boolean
+  /** parentTaskId -> its subtasks, for the per-card progress badge / checklist. */
+  subtasksByParent?: Record<string, Task[]>
 }
 
-function DraggableTaskCard({ task, onUpdate }: { task: Task; onUpdate?: () => void }) {
+function DraggableTaskCard({ task, subtasks, onUpdate }: { task: Task; subtasks?: Task[]; onUpdate?: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id })
 
@@ -63,7 +65,7 @@ function DraggableTaskCard({ task, onUpdate }: { task: Task; onUpdate?: () => vo
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard task={task} onUpdate={onUpdate} />
+      <TaskCard task={task} subtasks={subtasks} onUpdate={onUpdate} />
     </div>
   )
 }
@@ -77,7 +79,17 @@ function ColumnHeader({ col, count }: { col: ColumnDef; count: number }) {
   )
 }
 
-function DndColumn({ col, tasks, onUpdate }: { col: ColumnDef; tasks: Task[]; onUpdate?: () => void }) {
+function DndColumn({
+  col,
+  tasks,
+  subtasksByParent,
+  onUpdate,
+}: {
+  col: ColumnDef
+  tasks: Task[]
+  subtasksByParent?: Record<string, Task[]>
+  onUpdate?: () => void
+}) {
   const { setNodeRef } = useDroppable({ id: col.id })
   const taskIds = tasks.map((t) => t.id)
 
@@ -87,7 +99,12 @@ function DndColumn({ col, tasks, onUpdate }: { col: ColumnDef; tasks: Task[]; on
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
         <div className="space-y-3">
           {tasks.map((task) => (
-            <DraggableTaskCard key={task.id} task={task} onUpdate={onUpdate} />
+            <DraggableTaskCard
+              key={task.id}
+              task={task}
+              subtasks={subtasksByParent?.[task.id]}
+              onUpdate={onUpdate}
+            />
           ))}
           {tasks.length === 0 && (
             <p className="text-gray-500 text-sm text-center py-4">No tasks</p>
@@ -98,13 +115,23 @@ function DndColumn({ col, tasks, onUpdate }: { col: ColumnDef; tasks: Task[]; on
   )
 }
 
-function StaticColumn({ col, tasks, onUpdate }: { col: ColumnDef; tasks: Task[]; onUpdate?: () => void }) {
+function StaticColumn({
+  col,
+  tasks,
+  subtasksByParent,
+  onUpdate,
+}: {
+  col: ColumnDef
+  tasks: Task[]
+  subtasksByParent?: Record<string, Task[]>
+  onUpdate?: () => void
+}) {
   return (
     <div className={`${col.bgColor} rounded-lg p-4 min-h-[500px]`}>
       <ColumnHeader col={col} count={tasks.length} />
       <div className="space-y-3">
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onUpdate={onUpdate} />
+          <TaskCard key={task.id} task={task} subtasks={subtasksByParent?.[task.id]} onUpdate={onUpdate} />
         ))}
         {tasks.length === 0 && (
           <p className="text-gray-500 text-sm text-center py-4">No tasks</p>
@@ -114,7 +141,13 @@ function StaticColumn({ col, tasks, onUpdate }: { col: ColumnDef; tasks: Task[];
   )
 }
 
-export default function TaskBoard({ tasks, onReorder, onUpdate, reorderable = true }: TaskBoardProps) {
+export default function TaskBoard({
+  tasks,
+  onReorder,
+  onUpdate,
+  reorderable = true,
+  subtasksByParent,
+}: TaskBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
@@ -208,7 +241,13 @@ export default function TaskBoard({ tasks, onReorder, onUpdate, reorderable = tr
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {COLUMNS.map((col) => (
-          <StaticColumn key={col.id} col={col} tasks={tasksByStatus[col.id]} onUpdate={onUpdate} />
+          <StaticColumn
+            key={col.id}
+            col={col}
+            tasks={tasksByStatus[col.id]}
+            subtasksByParent={subtasksByParent}
+            onUpdate={onUpdate}
+          />
         ))}
       </div>
     )
@@ -223,14 +262,20 @@ export default function TaskBoard({ tasks, onReorder, onUpdate, reorderable = tr
     >
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {COLUMNS.map((col) => (
-          <DndColumn key={col.id} col={col} tasks={tasksByStatus[col.id]} onUpdate={onUpdate} />
+          <DndColumn
+            key={col.id}
+            col={col}
+            tasks={tasksByStatus[col.id]}
+            subtasksByParent={subtasksByParent}
+            onUpdate={onUpdate}
+          />
         ))}
       </div>
 
       <DragOverlay>
         {activeTask ? (
           <div className="opacity-50 rotate-3 pointer-events-none">
-            <TaskCard task={activeTask} />
+            <TaskCard task={activeTask} subtasks={subtasksByParent?.[activeTask.id]} />
           </div>
         ) : null}
       </DragOverlay>

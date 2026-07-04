@@ -545,4 +545,20 @@ describe("TaskCard Component", () => {
       expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument()
     })
   })
+
+  describe("Subtasks", () => {
+    it("shows a subtask progress badge when subtasks are present", () => {
+      const subtasks = [
+        { id: "s1", title: "A", status: "completed" },
+        { id: "s2", title: "B", status: "todo" },
+      ] as any
+      render(<TaskCard task={mockTask} subtasks={subtasks} />)
+      expect(screen.getByText(/1\/2/)).toBeInTheDocument()
+    })
+
+    it("shows no subtask badge when there are none", () => {
+      render(<TaskCard task={mockTask} />)
+      expect(screen.queryByText(/\d+\/\d+/)).not.toBeInTheDocument()
+    })
+  })
 })
