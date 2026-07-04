@@ -20,6 +20,7 @@ model User {
   tags       Tag[]
   recurrenceRules RecurrenceRule[]
   habits     Habit[]
+  goals      Goal[]
 }
 
 model Habit {
@@ -54,6 +55,28 @@ model HabitCheckIn {
   createdAt DateTime @default(now())
 
   @@unique([habitId, date])
+}
+
+model Goal {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?   @db.Text
+  icon           String    @default("🎯")
+  color          String    @default("primary") // tailwind palette key: primary|success|warning|danger
+  progressType   String    @default("manual") // manual | numeric
+  targetValue    Float? // numeric: the target to reach
+  currentValue   Float     @default(0) // numeric: progress so far
+  unit           String? // numeric: e.g. "books"
+  manualProgress Int       @default(0) // manual: 0-100
+  targetDate     DateTime? // optional deadline (stored UTC-midnight, keyed by calendar day)
+  status         String    @default("active") // active | achieved | archived
+  order          Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId, status])
 }
 
 model RecurrenceRule {
