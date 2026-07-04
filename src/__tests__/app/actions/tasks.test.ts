@@ -26,6 +26,12 @@ jest.mock("@/lib/prisma", () => ({
       findMany: jest.fn(),
       aggregate: jest.fn(),
     },
+    recurrenceRule: {
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    $transaction: jest.fn(),
   },
 }))
 
@@ -37,7 +43,7 @@ jest.mock("next/cache", () => ({
   revalidatePath: jest.fn(),
 }))
 
-import { createTask, updateTask, deleteTask, getTasks, reorderTask } from "@/app/actions/tasks"
+import { createTask, updateTask, deleteTask, getTasks, reorderTask, completeTask } from "@/app/actions/tasks"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 
@@ -554,7 +560,7 @@ describe("Task Actions", () => {
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: { userId: "user-123" },
         orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-        include: { tags: { include: { tag: true } } }
+        include: { tags: { include: { tag: true } }, recurrence: true }
       })
       expect(result).toEqual(tasks)
     })
@@ -571,7 +577,7 @@ describe("Task Actions", () => {
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: { userId: "custom-user" },
         orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-        include: { tags: { include: { tag: true } } }
+        include: { tags: { include: { tag: true } }, recurrence: true }
       })
       expect(result).toEqual(tasks)
     })
@@ -738,6 +744,71 @@ describe("Task Actions", () => {
           completedAt: null
         }
       })
+    })
+  })
+
+  describe("completeTask", () => {
+    it("returns unauthorized without a session", async () => {
+      mockAuth.mockResolvedValue(null)
+      expect(await completeTask("task-1")).toEqual({ error: "Unauthorized" })
+    })
+
+    it("completes a non-recurring task", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        recurrence: null,
+      })
+      ;(mockPrisma.task.update as jest.Mock).mockResolvedValue({ id: "task-1", status: "completed" })
+
+      const res = await completeTask("task-1")
+
+      const call = (mockPrisma.task.update as jest.Mock).mock.calls[0][0]
+      expect(call.where).toEqual({ id: "task-1" })
+      expect(call.data.status).toBe("completed")
+      expect(call.data.completedAt).toBeInstanceOf(Date)
+      expect(res).toEqual(expect.objectContaining({ success: true }))
+    })
+
+    it("rolls a recurring task forward to its next occurrence", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        dueDate: new Date(2026, 6, 15),
+        startDate: null,
+        recurrence: {
+          id: "r1",
+          freq: "daily",
+          interval: 1,
+          anchorMode: "due",
+          completedCount: 0,
+          count: null,
+          until: null,
+          byWeekday: [],
+        },
+      })
+      ;(mockPrisma.$transaction as jest.Mock).mockResolvedValue([])
+
+      const res = await completeTask("task-1")
+
+      // Rolled forward: same row, next day, back to todo, rule count bumped.
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "task-1" },
+          data: expect.objectContaining({
+            status: "todo",
+            completedAt: null,
+            dueDate: new Date(2026, 6, 16),
+          }),
+        })
+      )
+      expect(mockPrisma.recurrenceRule.update).toHaveBeenCalledWith({
+        where: { id: "r1" },
+        data: { completedCount: { increment: 1 } },
+      })
+      expect(res).toEqual({ success: true, recurred: true })
     })
   })
 })

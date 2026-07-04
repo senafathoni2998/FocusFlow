@@ -11,7 +11,7 @@ import {
 import { type DateHorizon, isDateHorizon } from "@/lib/dateHorizon"
 import { isTerminalStatus } from "@/lib/taskConstants"
 import { useTaskUpdates } from "@/hooks/useTaskUpdates"
-import { reorderTask } from "@/app/actions/tasks"
+import { reorderTask, completeTask } from "@/app/actions/tasks"
 import { createList, deleteList } from "@/app/actions/lists"
 import { deleteTag } from "@/app/actions/tags"
 import { groupSubtasksByParent, topLevelTasks } from "@/lib/subtasks"
@@ -233,6 +233,13 @@ export default function TasksWorkspace({ tasks, lists, allTags }: TasksWorkspace
             : t
         )
       )
+      if (newStatus === "completed") {
+        // Route completion through completeTask so a recurring task rolls forward
+        // (the refresh reconciles the optimistic "completed" back to its next
+        // occurrence).
+        completeTask(id).then(() => router.refresh())
+        return
+      }
       reorderTask({ id, newStatus, newOrder }).then((res) => {
         // Resync from the server if the persist failed, so optimistic state
         // doesn't drift.

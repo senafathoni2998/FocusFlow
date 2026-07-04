@@ -272,6 +272,7 @@ describe("EditTaskForm Component", () => {
           dueDate: "2025-01-15",
           listId: null,
           tags: [],
+          recurrence: null,
         })
       })
       // Let the async handler finish (onUpdate -> onClose) so its trailing calls
@@ -345,6 +346,7 @@ describe("EditTaskForm Component", () => {
           dueDate: "",
           listId: null,
           tags: [],
+          recurrence: null,
         })
       })
       await waitFor(() => expect(mockOnClose).toHaveBeenCalled())

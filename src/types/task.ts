@@ -31,6 +31,13 @@ export interface Task {
   parentTaskId?: string | null
   listId?: string | null
   tags?: TagSummary[]
+  recurrence?: RecurrenceSummary | null
+}
+
+/** Minimal recurrence shape the client UI needs (card badge, form dropdown). */
+export interface RecurrenceSummary {
+  freq: string
+  interval?: number
 }
 
 /** Minimal list shape the client UI needs (sidebar, form dropdowns). */

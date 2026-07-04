@@ -21,6 +21,7 @@ import TaskCard from "@/components/tasks/TaskCard"
 jest.mock("@/app/actions/tasks", () => ({
   updateTask: jest.fn(),
   deleteTask: jest.fn(),
+  completeTask: jest.fn(),
 }))
 
 // Mock react-markdown
@@ -65,11 +66,13 @@ const mockOnUpdate = jest.fn()
 describe("TaskCard Component", () => {
   let mockUpdateTask: jest.Mock
   let mockDeleteTask: jest.Mock
+  let mockCompleteTask: jest.Mock
 
   beforeEach(() => {
     jest.clearAllMocks()
     mockUpdateTask = require("@/app/actions/tasks").updateTask
     mockDeleteTask = require("@/app/actions/tasks").deleteTask
+    mockCompleteTask = require("@/app/actions/tasks").completeTask
     global.confirm = jest.fn(() => true) as any
   })
 
@@ -512,7 +515,7 @@ describe("TaskCard Component", () => {
 
       await user.selectOptions(select, "completed")
       await waitFor(() => {
-        expect(mockUpdateTask).toHaveBeenCalledWith("task-1", { status: "completed" })
+        expect(mockCompleteTask).toHaveBeenCalledWith("task-1")
       })
 
       await user.selectOptions(select, "todo")
@@ -520,7 +523,8 @@ describe("TaskCard Component", () => {
         expect(mockUpdateTask).toHaveBeenCalledWith("task-1", { status: "todo" })
       })
 
-      expect(mockUpdateTask).toHaveBeenCalledTimes(3)
+      expect(mockUpdateTask).toHaveBeenCalledTimes(2)
+      expect(mockCompleteTask).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -573,6 +577,18 @@ describe("TaskCard Component", () => {
     it("renders no tag chips when there are none", () => {
       render(<TaskCard task={mockTask} />)
       expect(screen.queryByText(/^#/)).not.toBeInTheDocument()
+    })
+  })
+
+  describe("Recurrence", () => {
+    it("shows a repeat badge for recurring tasks", () => {
+      render(<TaskCard task={{ ...mockTask, recurrence: { freq: "daily" } } as any} />)
+      expect(screen.getByText(/Daily/)).toBeInTheDocument()
+    })
+
+    it("shows no repeat badge for non-recurring tasks", () => {
+      render(<TaskCard task={mockTask} />)
+      expect(screen.queryByText(/🔁/)).not.toBeInTheDocument()
     })
   })
 })

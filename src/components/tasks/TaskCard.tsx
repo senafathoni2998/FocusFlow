@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { updateTask, deleteTask } from "@/app/actions/tasks";
+import { updateTask, deleteTask, completeTask } from "@/app/actions/tasks";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import EditTaskForm from "./EditTaskForm";
 import type { Task } from "@/types/task";
 import { subtaskProgress } from "@/lib/subtasks";
+import { RECURRENCE_LABELS, type RecurrenceFreq } from "@/lib/recurrence";
 
 interface TaskCardProps {
   task: Task;
@@ -34,7 +35,12 @@ export default function TaskCard({ task, subtasks, onUpdate }: TaskCardProps) {
   const { done, total } = subtaskProgress(subtasks);
 
   const handleStatusChange = async (newStatus: string) => {
-    await updateTask(task.id, { status: newStatus });
+    // Route completion through completeTask so recurring tasks roll forward.
+    if (newStatus === "completed") {
+      await completeTask(task.id);
+    } else {
+      await updateTask(task.id, { status: newStatus });
+    }
     onUpdate?.();
   };
 
@@ -153,6 +159,11 @@ export default function TaskCard({ task, subtasks, onUpdate }: TaskCardProps) {
               title="Subtasks completed"
             >
               ☑ {done}/{total}
+            </span>
+          )}
+          {task.recurrence && (
+            <span className="text-xs px-2 py-1 rounded-full bg-primary-50 text-primary-700" title="Repeats">
+              🔁 {RECURRENCE_LABELS[task.recurrence.freq as RecurrenceFreq] ?? "Repeats"}
             </span>
           )}
         </div>

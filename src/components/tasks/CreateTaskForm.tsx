@@ -3,6 +3,7 @@
 import { useState, useRef } from "react"
 import { createTask } from "@/app/actions/tasks"
 import type { ListSummary } from "@/types/task"
+import { RECURRENCE_FREQS, RECURRENCE_LABELS } from "@/lib/recurrence"
 
 // Helper function to insert markdown around selected text
 const insertMarkdown = (
@@ -48,6 +49,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
   const [dueDate, setDueDate] = useState("")
   const [listId, setListId] = useState(defaultListId)
   const [tags, setTags] = useState("")
+  const [recurrence, setRecurrence] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
@@ -80,6 +82,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
       dueDate,
       listId: listId || undefined,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      recurrence: recurrence || null,
     })
 
     if (result.error) {
@@ -92,6 +95,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
       setDueDate("")
       setListId(defaultListId)
       setTags("")
+      setRecurrence("")
       setLoading(false)
       onClose?.()
     }
@@ -199,6 +203,25 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
           placeholder="work, urgent"
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
         />
+      </div>
+
+      <div>
+        <label htmlFor="recurrence" className="block text-sm font-medium text-gray-700 mb-2">
+          Repeat
+        </label>
+        <select
+          id="recurrence"
+          value={recurrence}
+          onChange={(e) => setRecurrence(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
+        >
+          <option value="">Does not repeat</option>
+          {RECURRENCE_FREQS.map((f) => (
+            <option key={f} value={f}>
+              {RECURRENCE_LABELS[f]}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-3 pt-4">

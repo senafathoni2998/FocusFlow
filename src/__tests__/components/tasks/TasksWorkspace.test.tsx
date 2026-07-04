@@ -18,7 +18,10 @@ jest.mock("next/navigation", () => ({
 }))
 
 jest.mock("@/hooks/useTaskUpdates", () => ({ useTaskUpdates: jest.fn() }))
-jest.mock("@/app/actions/tasks", () => ({ reorderTask: jest.fn() }))
+jest.mock("@/app/actions/tasks", () => ({
+  reorderTask: jest.fn(),
+  completeTask: jest.fn().mockResolvedValue({ success: true }),
+}))
 jest.mock("@/app/actions/lists", () => ({
   createList: jest.fn().mockResolvedValue({ success: true }),
   deleteList: jest.fn().mockResolvedValue({ success: true }),

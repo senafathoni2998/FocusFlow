@@ -18,6 +18,26 @@ model User {
   sessions   FocusSession[]
   lists      List[]
   tags       Tag[]
+  recurrenceRules RecurrenceRule[]
+}
+
+model RecurrenceRule {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  freq           String    // daily | weekly | monthly | yearly
+  interval       Int       @default(1)
+  byWeekday      Int[]     @default([]) // 0-6 (Sun-Sat), weekly only
+  anchorMode     String    @default("due") // due | completion
+  until          DateTime?
+  count          Int?
+  completedCount Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  task Task?
+
+  @@index([userId])
 }
 
 model Tag {
@@ -90,6 +110,11 @@ model Task {
 
   // Tags (many-to-many via the TaskTag join table).
   tags TaskTag[]
+
+  // Recurrence (1-1). On completion a recurring task rolls the same row forward
+  // to its next occurrence. Deleting the rule clears the link (SetNull).
+  recurrenceId String?         @unique
+  recurrence   RecurrenceRule? @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
 
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

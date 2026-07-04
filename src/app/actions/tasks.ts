@@ -10,6 +10,8 @@ import {
   priorityRankOf,
   isTerminalStatus,
 } from "@/lib/taskConstants"
+import { computeNextOccurrence, isRecurrenceFreq } from "@/lib/recurrence"
+import { startOfDay } from "date-fns"
 
 /**
  * Parse a date input into a Date anchored at LOCAL midnight.
@@ -80,6 +82,7 @@ const taskSchema = z.object({
   parentTaskId: z.string().optional(),
   listId: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
+  recurrence: z.enum(["daily", "weekly", "monthly", "yearly"]).nullable().optional(),
 })
 
 export async function createTask(data: {
@@ -94,6 +97,7 @@ export async function createTask(data: {
   parentTaskId?: string
   listId?: string | null
   tags?: string[]
+  recurrence?: string | null
 }) {
   const session = await auth()
 
@@ -114,6 +118,7 @@ export async function createTask(data: {
       parentTaskId: data.parentTaskId,
       listId: data.listId,
       tags: data.tags,
+      recurrence: data.recurrence,
     })
 
     // If creating a subtask, verify the parent belongs to this user.
@@ -148,6 +153,21 @@ export async function createTask(data: {
     const nextOrder = (maxOrder._max.order ?? 0) + 10
     const tagInput = tagCreateInput(validated.tags, session.user.id)
 
+    // Create the recurrence rule up front (if any) and link it by scalar id, so
+    // the Task create stays in Prisma's "unchecked" (scalar FK) form.
+    let recurrenceId: string | undefined
+    if (isRecurrenceFreq(validated.recurrence)) {
+      const rule = await prisma.recurrenceRule.create({
+        data: {
+          freq: validated.recurrence,
+          interval: 1,
+          anchorMode: "due",
+          userId: session.user.id,
+        },
+      })
+      recurrenceId = rule.id
+    }
+
     const task = await prisma.task.create({
       data: {
         title: validated.title,
@@ -162,6 +182,7 @@ export async function createTask(data: {
         parentTaskId: validated.parentTaskId,
         listId: validated.listId,
         order: nextOrder,
+        recurrenceId,
         ...(tagInput.length ? { tags: { create: tagInput } } : {}),
         userId: session.user.id,
       },
@@ -194,6 +215,7 @@ export async function updateTask(
     parentTaskId?: string | null
     listId?: string | null
     tags?: string[]
+    recurrence?: string | null
   }
 ) {
   const session = await auth()
@@ -292,10 +314,36 @@ export async function updateTask(
       }
     }
 
+    // Recurrence handled via scalar recurrenceId + separate rule queries, so the
+    // update stays in the unchecked (scalar FK) form alongside listId/tags.
+    let ruleToDelete: string | null = null
+    if (data.recurrence !== undefined) {
+      if (isRecurrenceFreq(data.recurrence)) {
+        if (existingTask.recurrenceId) {
+          await prisma.recurrenceRule.update({
+            where: { id: existingTask.recurrenceId },
+            data: { freq: data.recurrence },
+          })
+        } else {
+          const rule = await prisma.recurrenceRule.create({
+            data: { freq: data.recurrence, interval: 1, anchorMode: "due", userId: session.user.id },
+          })
+          updateData.recurrenceId = rule.id
+        }
+      } else if (existingTask.recurrenceId) {
+        updateData.recurrenceId = null
+        ruleToDelete = existingTask.recurrenceId
+      }
+    }
+
     const task = await prisma.task.update({
       where: { id },
       data: updateData,
     })
+
+    if (ruleToDelete) {
+      await prisma.recurrenceRule.delete({ where: { id: ruleToDelete } }).catch(() => {})
+    }
 
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
@@ -327,12 +375,84 @@ export async function deleteTask(id: string) {
       where: { id },
     })
 
+    // Clean up the (now orphaned) recurrence rule, if any.
+    if (existingTask.recurrenceId) {
+      await prisma.recurrenceRule
+        .delete({ where: { id: existingTask.recurrenceId } })
+        .catch(() => {})
+    }
+
     revalidatePath("/tasks")
     revalidatePath("/dashboard")
 
     return { success: true }
   } catch (error) {
     return { error: "Failed to delete task" }
+  }
+}
+
+/**
+ * Mark a task complete. For a recurring task with a remaining occurrence, roll
+ * the SAME row forward (shift due/start dates, reset to todo, bump the rule's
+ * completedCount) instead of completing it — so it stays in horizon queries.
+ */
+export async function completeTask(id: string) {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { error: "Unauthorized" }
+  }
+
+  try {
+    const task = await prisma.task.findFirst({
+      where: { id, userId: session.user.id },
+      include: { recurrence: true },
+    })
+
+    if (!task) {
+      return { error: "Task not found" }
+    }
+
+    if (task.recurrence) {
+      const anchor =
+        task.recurrence.anchorMode === "completion"
+          ? startOfDay(new Date())
+          : task.dueDate ?? task.startDate ?? startOfDay(new Date())
+      const next = computeNextOccurrence(task.recurrence, anchor)
+
+      if (next) {
+        const shiftedStart =
+          task.startDate && task.dueDate
+            ? new Date(next.getTime() - (task.dueDate.getTime() - task.startDate.getTime()))
+            : task.startDate
+
+        await prisma.$transaction([
+          prisma.task.update({
+            where: { id },
+            data: { dueDate: next, startDate: shiftedStart, status: "todo", completedAt: null },
+          }),
+          prisma.recurrenceRule.update({
+            where: { id: task.recurrence.id },
+            data: { completedCount: { increment: 1 } },
+          }),
+        ])
+
+        revalidatePath("/tasks")
+        revalidatePath("/dashboard")
+        return { success: true, recurred: true }
+      }
+    }
+
+    const updated = await prisma.task.update({
+      where: { id },
+      data: { status: "completed", completedAt: task.completedAt ?? new Date() },
+    })
+
+    revalidatePath("/tasks")
+    revalidatePath("/dashboard")
+    return { success: true, task: updated }
+  } catch (error) {
+    return { error: "Failed to complete task" }
   }
 }
 
@@ -354,7 +474,7 @@ export async function getTasks(userId?: string) {
     const tasks = await prisma.task.findMany({
       where: { userId: targetUserId },
       orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-      include: { tags: { include: { tag: true } } },
+      include: { tags: { include: { tag: true } }, recurrence: true },
     })
 
     // Flatten TaskTag[] -> the tag rows for the client.

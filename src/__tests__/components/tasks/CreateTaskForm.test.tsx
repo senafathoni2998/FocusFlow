@@ -259,6 +259,7 @@ describe("CreateTaskForm Component", () => {
           dueDate: "2024-12-31",
           listId: undefined,
           tags: [],
+          recurrence: null,
         })
       })
     })
@@ -316,6 +317,7 @@ describe("CreateTaskForm Component", () => {
           dueDate: "",
           listId: undefined,
           tags: [],
+          recurrence: null,
         })
       })
     })
