@@ -19,6 +19,41 @@ model User {
   lists      List[]
   tags       Tag[]
   recurrenceRules RecurrenceRule[]
+  habits     Habit[]
+}
+
+model Habit {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  icon          String   @default("✅")
+  color         String   @default("primary") // tailwind palette key: primary|success|warning|danger
+  frequencyType String   @default("daily") // daily | weekly
+  weekdays      Int[]    @default([]) // 0-6 (Sun-Sat); empty = every day (daily)
+  weeklyTarget  Int      @default(1) // times per week (weekly)
+  goalType      String   @default("achieve") // achieve | amount
+  targetAmount  Float?   @default(1)
+  unit          String?
+  archived      Boolean  @default(false)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  checkIns HabitCheckIn[]
+
+  @@index([userId, archived])
+}
+
+model HabitCheckIn {
+  id        String   @id @default(cuid())
+  habitId   String
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  amount    Float    @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([habitId, date])
 }
 
 model RecurrenceRule {

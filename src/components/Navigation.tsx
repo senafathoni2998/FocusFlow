@@ -50,6 +50,7 @@ export default function Navigation() {
   const navLinks = [
     { href: "/dashboard", label: "Dashboard", icon: "📊" },
     { href: "/tasks", label: "Tasks", icon: "📋" },
+    { href: "/habits", label: "Habits", icon: "🔁" },
     { href: "/timer", label: "Timer", icon: "⏱️" }
   ]
 
