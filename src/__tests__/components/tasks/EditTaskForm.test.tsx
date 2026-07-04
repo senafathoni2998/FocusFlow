@@ -21,6 +21,11 @@ jest.mock("@/app/actions/tasks", () => ({
   updateTask: jest.fn(),
 }))
 
+// EditTaskForm fetches lists on mount for its List dropdown.
+jest.mock("@/app/actions/lists", () => ({
+  getLists: jest.fn().mockResolvedValue([]),
+}))
+
 const mockTask = {
   id: "task-1",
   title: "Existing Task",
@@ -263,6 +268,7 @@ describe("EditTaskForm Component", () => {
           description: "Updated description",
           priority: "medium",
           dueDate: "2025-01-15",
+          listId: null,
         })
       })
     })
@@ -331,6 +337,7 @@ describe("EditTaskForm Component", () => {
           description: "Existing description",
           priority: "high",
           dueDate: "",
+          listId: null,
         })
       })
     })

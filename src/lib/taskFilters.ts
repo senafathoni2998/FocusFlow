@@ -25,6 +25,8 @@ export interface TaskFilters {
   priorities: string[]
   query: string
   sort: SortKey
+  /** undefined = all lists; null = Inbox (no list); string = that list. */
+  listId?: string | null
 }
 
 export const DEFAULT_FILTERS: TaskFilters = {
@@ -70,6 +72,13 @@ function matchesQuery(task: Task, query: string): boolean {
 }
 
 export function matchesFilters(task: Task, filters: TaskFilters, now: Date = new Date()): boolean {
+  if (filters.listId !== undefined) {
+    if (filters.listId === null) {
+      if (task.listId != null) return false // Inbox = tasks with no list
+    } else if (task.listId !== filters.listId) {
+      return false
+    }
+  }
   if (!matchesHorizonSmart(task, filters.horizon, now, filters.custom)) return false
   if (filters.statuses.length > 0 && !filters.statuses.includes(task.status)) return false
   if (filters.priorities.length > 0 && !filters.priorities.includes(task.priority)) return false

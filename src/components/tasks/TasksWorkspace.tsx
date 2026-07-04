@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import type { Task } from "@/types/task"
+import type { Task, ListSummary } from "@/types/task"
 import {
   applyFilters,
   type TaskFilters,
@@ -12,6 +12,7 @@ import { type DateHorizon, isDateHorizon } from "@/lib/dateHorizon"
 import { isTerminalStatus } from "@/lib/taskConstants"
 import { useTaskUpdates } from "@/hooks/useTaskUpdates"
 import { reorderTask } from "@/app/actions/tasks"
+import { createList, deleteList } from "@/app/actions/lists"
 import TaskBoard from "./TaskBoard"
 import TaskListView from "./TaskListView"
 import SmartListSidebar from "./SmartListSidebar"
@@ -48,11 +49,14 @@ function parseState(sp: URLSearchParams): { filters: TaskFilters; view: ViewMode
   const to = parseLocalDate(sp.get("to"))
   const custom = from || to ? { from, to } : undefined
   const view: ViewMode = sp.get("view") === "list" ? "list" : "board"
-  return { filters: { horizon, statuses, priorities, query, sort, custom }, view }
+  const listParam = sp.get("list")
+  const listId = listParam === "inbox" ? null : listParam ? listParam : undefined
+  return { filters: { horizon, statuses, priorities, query, sort, custom, listId }, view }
 }
 
 interface TasksWorkspaceProps {
   tasks: Task[]
+  lists: ListSummary[]
 }
 
 /**
@@ -61,7 +65,7 @@ interface TasksWorkspaceProps {
  * smart list is a shareable, refresh-surviving link. Optimistic task state and
  * AI-driven refresh are owned here and shared by every view.
  */
-export default function TasksWorkspace({ tasks }: TasksWorkspaceProps) {
+export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -105,6 +109,7 @@ export default function TasksWorkspace({ tasks }: TasksWorkspaceProps) {
     filters.priorities.length === 0 &&
     filters.query.trim() === "" &&
     !filters.custom &&
+    filters.listId === undefined &&
     filters.sort === "manual"
 
   const setParam = useCallback(
@@ -153,6 +158,37 @@ export default function TasksWorkspace({ tasks }: TasksWorkspaceProps) {
   const handleViewChange = useCallback(
     (v: ViewMode) => setParam({ view: v === "board" ? null : v }),
     [setParam]
+  )
+
+  const handleSelectList = useCallback(
+    (listId: string | null) => {
+      // Toggle off when re-selecting the active list.
+      const value = filters.listId === listId ? undefined : listId
+      setParam({ list: value === undefined ? null : value === null ? "inbox" : value })
+    },
+    [filters.listId, setParam]
+  )
+
+  const handleCreateList = useCallback(
+    (name: string) => {
+      createList({ name }).then((res) => {
+        if (res && "success" in res) router.refresh()
+      })
+    },
+    [router]
+  )
+
+  const handleDeleteList = useCallback(
+    (id: string) => {
+      if (!window.confirm("Delete this list? Its tasks move to the Inbox.")) return
+      deleteList(id).then((res) => {
+        if (res && "success" in res) {
+          if (filters.listId === id) setParam({ list: null })
+          router.refresh()
+        }
+      })
+    },
+    [router, filters.listId, setParam]
   )
 
   const handleReorder = useCallback(
@@ -218,7 +254,12 @@ export default function TasksWorkspace({ tasks }: TasksWorkspaceProps) {
           tasks={localTasks}
           now={now}
           activeHorizon={filters.horizon}
-          onSelect={handleSelectHorizon}
+          onSelectHorizon={handleSelectHorizon}
+          lists={lists}
+          activeListId={filters.listId}
+          onSelectList={handleSelectList}
+          onCreateList={handleCreateList}
+          onDeleteList={handleDeleteList}
         />
 
         <div className="flex-1 min-w-0">
@@ -246,7 +287,11 @@ export default function TasksWorkspace({ tasks }: TasksWorkspaceProps) {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Create New Task</h2>
-            <CreateTaskForm onClose={() => setShowCreate(false)} />
+            <CreateTaskForm
+              onClose={() => setShowCreate(false)}
+              lists={lists}
+              defaultListId={typeof filters.listId === "string" ? filters.listId : ""}
+            />
           </div>
         </div>
       )}

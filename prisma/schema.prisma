@@ -16,6 +16,22 @@ model User {
 
   tasks      Task[]
   sessions   FocusSession[]
+  lists      List[]
+}
+
+model List {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([userId])
 }
 
 model Task {
@@ -40,6 +56,11 @@ model Task {
   parentTask   Task?   @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
   subtasks     Task[]  @relation("Subtasks")
 
+  // List container. Null listId = Inbox. Deleting a list re-parents its tasks
+  // to Inbox (SetNull) rather than deleting them.
+  listId String?
+  list   List?   @relation(fields: [listId], references: [id], onDelete: SetNull)
+
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
@@ -51,6 +72,7 @@ model Task {
   @@index([userId, status, dueDate])
   @@index([userId, priorityRank])
   @@index([parentTaskId])
+  @@index([userId, listId])
 }
 
 model FocusSession {

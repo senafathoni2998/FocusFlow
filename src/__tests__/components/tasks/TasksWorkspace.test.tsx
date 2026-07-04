@@ -19,6 +19,11 @@ jest.mock("next/navigation", () => ({
 
 jest.mock("@/hooks/useTaskUpdates", () => ({ useTaskUpdates: jest.fn() }))
 jest.mock("@/app/actions/tasks", () => ({ reorderTask: jest.fn() }))
+jest.mock("@/app/actions/lists", () => ({
+  createList: jest.fn().mockResolvedValue({ success: true }),
+  deleteList: jest.fn().mockResolvedValue({ success: true }),
+  getLists: jest.fn().mockResolvedValue([]),
+}))
 
 jest.mock("@/components/tasks/TaskBoard", () => {
   return function MockBoard({ tasks }: any) {
@@ -52,12 +57,18 @@ const mk = (id: string, o: Partial<Task> = {}): Task =>
     priority: o.priority ?? "medium",
     dueDate: o.dueDate ?? null,
     order: o.order ?? 0,
+    listId: o.listId ?? null,
   } as Task)
 
 const tasks: Task[] = [
   mk("today", { dueDate: new Date() }),
   mk("open2", { status: "in-progress", dueDate: null }),
   mk("done", { status: "completed", dueDate: null }),
+]
+
+const testLists = [
+  { id: "l1", name: "Work" },
+  { id: "l2", name: "Home" },
 ]
 
 describe("TasksWorkspace", () => {
@@ -67,13 +78,13 @@ describe("TasksWorkspace", () => {
   })
 
   it("renders the header and New Task button", () => {
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     expect(screen.getByRole("heading", { name: "Tasks" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "+ New Task" })).toBeInTheDocument()
   })
 
   it("renders the smart-list sidebar with date horizons", () => {
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     expect(screen.getByRole("button", { name: /Today/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /This Month/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Next Year/ })).toBeInTheDocument()
@@ -81,32 +92,32 @@ describe("TasksWorkspace", () => {
   })
 
   it("shows the board view by default", () => {
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     expect(screen.getByTestId("board")).toBeInTheDocument()
     expect(screen.queryByTestId("list")).not.toBeInTheDocument()
   })
 
   it("selecting a horizon writes ?horizon to the URL", async () => {
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     await userEvent.click(screen.getByRole("button", { name: /This Month/ }))
     expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("horizon=thisMonth"), expect.anything())
   })
 
   it("switching to the list view writes ?view=list", async () => {
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     await userEvent.click(screen.getByRole("button", { name: "list" }))
     expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("view=list"), expect.anything())
   })
 
   it("renders the list view when ?view=list", () => {
     mockSearch = "view=list"
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     expect(screen.getByTestId("list")).toBeInTheDocument()
     expect(screen.queryByTestId("board")).not.toBeInTheDocument()
   })
 
   it("toggling a status pill writes ?status", async () => {
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     await userEvent.click(screen.getByRole("button", { name: "To Do" }))
     expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("status=todo"), expect.anything())
   })
@@ -115,20 +126,45 @@ describe("TasksWorkspace", () => {
     // The search input is URL-controlled; with a static useSearchParams mock it
     // resets each keystroke, so assert on a single character (still exercises
     // the query → URL wiring deterministically).
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     await userEvent.type(screen.getByLabelText("Search tasks"), "a")
     expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("q=a"), expect.anything())
   })
 
   it("opens the create-task modal from the New Task button", async () => {
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     await userEvent.click(screen.getByRole("button", { name: "+ New Task" }))
     expect(screen.getByTestId("create-form")).toBeInTheDocument()
   })
 
   it("filters by horizon before handing tasks to the view (No Date → 2)", () => {
     mockSearch = "horizon=noDate"
-    render(<TasksWorkspace tasks={tasks} />)
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
     expect(screen.getByTestId("board")).toHaveAttribute("data-count", "2")
+  })
+
+  it("renders the Lists section with Inbox and custom lists", () => {
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
+    expect(screen.getByRole("button", { name: /Inbox/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Work" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Home" })).toBeInTheDocument()
+  })
+
+  it("selecting a list writes ?list=<id>", async () => {
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
+    await userEvent.click(screen.getByRole("button", { name: "Work" }))
+    expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("list=l1"), expect.anything())
+  })
+
+  it("clicking Inbox writes ?list=inbox", async () => {
+    render(<TasksWorkspace tasks={tasks} lists={testLists} />)
+    await userEvent.click(screen.getByRole("button", { name: /Inbox/ }))
+    expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("list=inbox"), expect.anything())
+  })
+
+  it("filters tasks to the selected list", () => {
+    mockSearch = "list=l1"
+    render(<TasksWorkspace tasks={[mk("w", { listId: "l1" }), mk("i", {})]} lists={testLists} />)
+    expect(screen.getByTestId("board")).toHaveAttribute("data-count", "1")
   })
 })

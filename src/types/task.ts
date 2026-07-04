@@ -29,6 +29,14 @@ export interface Task {
   estimatedPomos?: number | null
   priorityRank?: number
   parentTaskId?: string | null
+  listId?: string | null
+}
+
+/** Minimal list shape the client UI needs (sidebar, form dropdowns). */
+export interface ListSummary {
+  id: string
+  name: string
+  color?: string | null
 }
 
 /** Presentation view modes for the task workspace (used from Phase 2 onward). */

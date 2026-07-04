@@ -18,6 +18,7 @@ const mk = (o: Partial<Task> & { id: string }): Task =>
     dueDate: o.dueDate ?? null,
     order: o.order,
     priorityRank: o.priorityRank,
+    listId: o.listId,
   } as Task)
 
 describe("applyFilters — horizon smart lists", () => {
@@ -124,5 +125,25 @@ describe("horizonCounts", () => {
     expect(counts.overdue).toBe(1)
     expect(counts.noDate).toBe(1)
     expect(counts.thisMonth).toBe(2) // both July dated tasks
+  })
+})
+
+describe("applyFilters — list", () => {
+  const tasks = [
+    mk({ id: "a", listId: "l1" }),
+    mk({ id: "b", listId: "l2" }),
+    mk({ id: "c" }), // no list → Inbox
+  ]
+
+  it("filters to a specific list", () => {
+    expect(applyFilters(tasks, { ...DEFAULT_FILTERS, listId: "l1" }).map((t) => t.id)).toEqual(["a"])
+  })
+
+  it("listId null = Inbox (tasks with no list)", () => {
+    expect(applyFilters(tasks, { ...DEFAULT_FILTERS, listId: null }).map((t) => t.id)).toEqual(["c"])
+  })
+
+  it("listId undefined = all lists", () => {
+    expect(applyFilters(tasks, { ...DEFAULT_FILTERS }).map((t) => t.id).sort()).toEqual(["a", "b", "c"])
   })
 })

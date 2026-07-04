@@ -52,6 +52,7 @@ const taskSchema = z.object({
   timeEstimateMin: z.number().int().positive().optional(),
   estimatedPomos: z.number().int().positive().optional(),
   parentTaskId: z.string().optional(),
+  listId: z.string().nullable().optional(),
 })
 
 export async function createTask(data: {
@@ -64,6 +65,7 @@ export async function createTask(data: {
   timeEstimateMin?: number
   estimatedPomos?: number
   parentTaskId?: string
+  listId?: string | null
 }) {
   const session = await auth()
 
@@ -82,6 +84,7 @@ export async function createTask(data: {
       timeEstimateMin: data.timeEstimateMin,
       estimatedPomos: data.estimatedPomos,
       parentTaskId: data.parentTaskId,
+      listId: data.listId,
     })
 
     // If creating a subtask, verify the parent belongs to this user.
@@ -92,6 +95,17 @@ export async function createTask(data: {
       })
       if (!parent) {
         return { error: "Parent task not found" }
+      }
+    }
+
+    // Verify list ownership if a list was chosen.
+    if (validated.listId) {
+      const list = await prisma.list.findFirst({
+        where: { id: validated.listId, userId: session.user.id },
+        select: { id: true },
+      })
+      if (!list) {
+        return { error: "List not found" }
       }
     }
 
@@ -116,6 +130,7 @@ export async function createTask(data: {
         timeEstimateMin: validated.timeEstimateMin,
         estimatedPomos: validated.estimatedPomos,
         parentTaskId: validated.parentTaskId,
+        listId: validated.listId,
         order: nextOrder,
         userId: session.user.id,
       },
@@ -146,6 +161,7 @@ export async function updateTask(
     timeEstimateMin?: number
     estimatedPomos?: number
     parentTaskId?: string | null
+    listId?: string | null
   }
 ) {
   const session = await auth()
@@ -218,6 +234,21 @@ export async function updateTask(
           return { error: "Parent task not found" }
         }
         updateData.parentTaskId = data.parentTaskId
+      }
+    }
+
+    if (data.listId !== undefined) {
+      if (data.listId === null) {
+        updateData.listId = null
+      } else {
+        const list = await prisma.list.findFirst({
+          where: { id: data.listId, userId: session.user.id },
+          select: { id: true },
+        })
+        if (!list) {
+          return { error: "List not found" }
+        }
+        updateData.listId = data.listId
       }
     }
 

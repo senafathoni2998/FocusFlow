@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { updateTask } from "@/app/actions/tasks"
+import { getLists } from "@/app/actions/lists"
+import type { ListSummary } from "@/types/task"
 
 // Helper function to insert markdown around selected text
 const insertMarkdown = (
@@ -41,6 +43,7 @@ interface EditTaskFormProps {
     description?: string | null
     priority: string
     dueDate?: Date | null
+    listId?: string | null
   }
   onClose?: () => void
   onUpdate?: () => void
@@ -64,9 +67,15 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
   const [dueDate, setDueDate] = useState(
     task.dueDate ? toDateInputValue(task.dueDate) : ""
   )
+  const [listId, setListId] = useState(task.listId ?? "")
+  const [lists, setLists] = useState<ListSummary[]>([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    getLists().then(setLists)
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const textarea = e.currentTarget
@@ -94,6 +103,7 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
       description,
       priority,
       dueDate,
+      listId: listId || null,
     })
 
     setLoading(false)
@@ -175,6 +185,25 @@ export default function EditTaskForm({ task, onClose, onUpdate }: EditTaskFormPr
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
           />
         </div>
+      </div>
+
+      <div>
+        <label htmlFor="edit-list" className="block text-sm font-medium text-gray-700 mb-2">
+          List
+        </label>
+        <select
+          id="edit-list"
+          value={listId}
+          onChange={(e) => setListId(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
+        >
+          <option value="">Inbox</option>
+          {lists.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-3 pt-4">

@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react"
 import { createTask } from "@/app/actions/tasks"
+import type { ListSummary } from "@/types/task"
 
 // Helper function to insert markdown around selected text
 const insertMarkdown = (
@@ -36,13 +37,16 @@ const insertMarkdown = (
 
 interface CreateTaskFormProps {
   onClose?: () => void
+  lists?: ListSummary[]
+  defaultListId?: string
 }
 
-export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
+export default function CreateTaskForm({ onClose, lists = [], defaultListId = "" }: CreateTaskFormProps) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [priority, setPriority] = useState("medium")
   const [dueDate, setDueDate] = useState("")
+  const [listId, setListId] = useState(defaultListId)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
@@ -68,7 +72,13 @@ export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
     setError("")
     setLoading(true)
 
-    const result = await createTask({ title, description, priority, dueDate })
+    const result = await createTask({
+      title,
+      description,
+      priority,
+      dueDate,
+      listId: listId || undefined,
+    })
 
     if (result.error) {
       setError(result.error)
@@ -78,6 +88,7 @@ export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
       setDescription("")
       setPriority("medium")
       setDueDate("")
+      setListId(defaultListId)
       setLoading(false)
       onClose?.()
     }
@@ -152,6 +163,25 @@ export default function CreateTaskForm({ onClose }: CreateTaskFormProps) {
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
           />
         </div>
+      </div>
+
+      <div>
+        <label htmlFor="list" className="block text-sm font-medium text-gray-700 mb-2">
+          List
+        </label>
+        <select
+          id="list"
+          value={listId}
+          onChange={(e) => setListId(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
+        >
+          <option value="">Inbox</option>
+          {lists.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-3 pt-4">
