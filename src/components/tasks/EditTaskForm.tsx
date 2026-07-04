@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { updateTask, createTask, deleteTask } from "@/app/actions/tasks"
 import { getLists } from "@/app/actions/lists"
-import type { ListSummary, Task } from "@/types/task"
+import type { ListSummary, Task, TagSummary } from "@/types/task"
 
 // Helper function to insert markdown around selected text
 const insertMarkdown = (
@@ -44,6 +44,7 @@ interface EditTaskFormProps {
     priority: string
     dueDate?: Date | null
     listId?: string | null
+    tags?: TagSummary[]
   }
   subtasks?: Task[]
   onClose?: () => void
@@ -69,6 +70,7 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
     task.dueDate ? toDateInputValue(task.dueDate) : ""
   )
   const [listId, setListId] = useState(task.listId ?? "")
+  const [tags, setTags] = useState((task.tags ?? []).map((t) => t.name).join(", "))
   const [lists, setLists] = useState<ListSummary[]>([])
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -127,6 +129,7 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
       priority,
       dueDate,
       listId: listId || null,
+      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
     })
 
     setLoading(false)
@@ -227,6 +230,20 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
             </option>
           ))}
         </select>
+      </div>
+
+      <div>
+        <label htmlFor="edit-tags" className="block text-sm font-medium text-gray-700 mb-2">
+          Tags <span className="text-gray-400 font-normal">(comma-separated)</span>
+        </label>
+        <input
+          id="edit-tags"
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="work, urgent"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
+        />
       </div>
 
       <div>

@@ -47,6 +47,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
   const [priority, setPriority] = useState("medium")
   const [dueDate, setDueDate] = useState("")
   const [listId, setListId] = useState(defaultListId)
+  const [tags, setTags] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
@@ -78,6 +79,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
       priority,
       dueDate,
       listId: listId || undefined,
+      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
     })
 
     if (result.error) {
@@ -89,6 +91,7 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
       setPriority("medium")
       setDueDate("")
       setListId(defaultListId)
+      setTags("")
       setLoading(false)
       onClose?.()
     }
@@ -182,6 +185,20 @@ export default function CreateTaskForm({ onClose, lists = [], defaultListId = ""
             </option>
           ))}
         </select>
+      </div>
+
+      <div>
+        <label htmlFor="tags" className="block text-sm font-medium text-gray-700 mb-2">
+          Tags <span className="text-gray-400 font-normal">(comma-separated)</span>
+        </label>
+        <input
+          id="tags"
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="work, urgent"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
+        />
       </div>
 
       <div className="flex gap-3 pt-4">

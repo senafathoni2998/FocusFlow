@@ -42,6 +42,32 @@ function parseDateInput(input?: string | null): Date | null {
   return isNaN(d.getTime()) ? null : d
 }
 
+/**
+ * Build the nested TaskTag create input from a list of tag names (deduped,
+ * trimmed). Each tag is connected if it already exists for the user (by the
+ * unique userId+name), otherwise created.
+ */
+const MAX_TAG_LEN = 50
+const MAX_TAGS_PER_TASK = 50
+
+function tagCreateInput(tagNames: string[] | undefined, userId: string) {
+  const names = Array.from(
+    new Set(
+      (tagNames ?? [])
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0 && t.length <= MAX_TAG_LEN)
+    )
+  ).slice(0, MAX_TAGS_PER_TASK)
+  return names.map((name) => ({
+    tag: {
+      connectOrCreate: {
+        where: { userId_name: { userId, name } },
+        create: { name, userId },
+      },
+    },
+  }))
+}
+
 const taskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -53,6 +79,7 @@ const taskSchema = z.object({
   estimatedPomos: z.number().int().positive().optional(),
   parentTaskId: z.string().optional(),
   listId: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
 })
 
 export async function createTask(data: {
@@ -66,6 +93,7 @@ export async function createTask(data: {
   estimatedPomos?: number
   parentTaskId?: string
   listId?: string | null
+  tags?: string[]
 }) {
   const session = await auth()
 
@@ -85,6 +113,7 @@ export async function createTask(data: {
       estimatedPomos: data.estimatedPomos,
       parentTaskId: data.parentTaskId,
       listId: data.listId,
+      tags: data.tags,
     })
 
     // If creating a subtask, verify the parent belongs to this user.
@@ -117,6 +146,7 @@ export async function createTask(data: {
       _max: { order: true },
     })
     const nextOrder = (maxOrder._max.order ?? 0) + 10
+    const tagInput = tagCreateInput(validated.tags, session.user.id)
 
     const task = await prisma.task.create({
       data: {
@@ -132,6 +162,7 @@ export async function createTask(data: {
         parentTaskId: validated.parentTaskId,
         listId: validated.listId,
         order: nextOrder,
+        ...(tagInput.length ? { tags: { create: tagInput } } : {}),
         userId: session.user.id,
       },
     })
@@ -162,6 +193,7 @@ export async function updateTask(
     estimatedPomos?: number
     parentTaskId?: string | null
     listId?: string | null
+    tags?: string[]
   }
 ) {
   const session = await auth()
@@ -252,6 +284,14 @@ export async function updateTask(
       }
     }
 
+    if (data.tags !== undefined) {
+      // Replace the full tag set: clear existing joins, then connect/create.
+      updateData.tags = {
+        deleteMany: {},
+        create: tagCreateInput(data.tags, session.user.id),
+      }
+    }
+
     const task = await prisma.task.update({
       where: { id },
       data: updateData,
@@ -314,9 +354,11 @@ export async function getTasks(userId?: string) {
     const tasks = await prisma.task.findMany({
       where: { userId: targetUserId },
       orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+      include: { tags: { include: { tag: true } } },
     })
 
-    return tasks
+    // Flatten TaskTag[] -> the tag rows for the client.
+    return tasks.map((t) => ({ ...t, tags: (t.tags ?? []).map((tt) => tt.tag) }))
   } catch (error) {
     return []
   }

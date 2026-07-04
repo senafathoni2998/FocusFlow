@@ -1,6 +1,7 @@
 "use client"
 
 import type { TaskFilters, SortKey } from "@/lib/taskFilters"
+import type { TagSummary } from "@/types/task"
 
 export type ViewMode = "board" | "list"
 
@@ -29,6 +30,8 @@ interface FilterBarProps {
   view: ViewMode
   onChange: (patch: Partial<TaskFilters>) => void
   onViewChange: (view: ViewMode) => void
+  allTags: TagSummary[]
+  onDeleteTag?: (id: string) => void
 }
 
 const toYMD = (d?: Date | null): string =>
@@ -43,7 +46,7 @@ const fromYMD = (s: string): Date | null => {
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null
 }
 
-export default function FilterBar({ filters, view, onChange, onViewChange }: FilterBarProps) {
+export default function FilterBar({ filters, view, onChange, onViewChange, allTags, onDeleteTag }: FilterBarProps) {
   const toggle = (arr: string[], v: string) =>
     arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]
 
@@ -116,6 +119,46 @@ export default function FilterBar({ filters, view, onChange, onViewChange }: Fil
           )
         })}
       </div>
+
+      {/* Tag chips */}
+      {allTags.length > 0 && (
+        <div className="flex gap-1 flex-wrap">
+          {allTags.map((tag) => {
+            const on = filters.tags.includes(tag.id)
+            return (
+              <span
+                key={tag.id}
+                className={`inline-flex items-center rounded-lg text-xs ${
+                  on ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    onChange({
+                      tags: on ? filters.tags.filter((t) => t !== tag.id) : [...filters.tags, tag.id],
+                    })
+                  }
+                  className="pl-2.5 pr-1 py-1.5"
+                >
+                  #{tag.name}
+                </button>
+                {onDeleteTag && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteTag(tag.id)}
+                    aria-label={`Delete tag ${tag.name}`}
+                    className="pr-2 pl-0.5 opacity-60 hover:opacity-100"
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {/* Sort (board columns are always manually ordered, so sort applies to the list view) */}
       {view === "list" && (

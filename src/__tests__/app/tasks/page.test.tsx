@@ -35,6 +35,11 @@ jest.mock("@/app/actions/lists", () => ({
   getLists: jest.fn(),
 }))
 
+// Mock @/app/actions/tags
+jest.mock("@/app/actions/tags", () => ({
+  getTags: jest.fn(),
+}))
+
 // Mock TasksWorkspace (the page's child component)
 jest.mock("@/components/tasks/TasksWorkspace", () => {
   return function MockTasksWorkspace({ tasks }: { tasks: any[] }) {
@@ -49,10 +54,12 @@ jest.mock("@/components/tasks/TasksWorkspace", () => {
 import { auth } from "@/lib/auth"
 import { getTasks } from "@/app/actions/tasks"
 import { getLists } from "@/app/actions/lists"
+import { getTags } from "@/app/actions/tags"
 const mockRedirect = redirect as jest.MockedFunction<typeof redirect>
 const mockAuth = auth as jest.MockedFunction<typeof auth>
 const mockGetTasks = getTasks as jest.MockedFunction<typeof getTasks>
 const mockGetLists = getLists as jest.MockedFunction<typeof getLists>
+const mockGetTags = getTags as jest.MockedFunction<typeof getTags>
 
 describe("Tasks Page", () => {
   const mockTasks = [
@@ -64,6 +71,7 @@ describe("Tasks Page", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockGetLists.mockResolvedValue([])
+    mockGetTags.mockResolvedValue([])
   })
 
   describe("Authentication", () => {

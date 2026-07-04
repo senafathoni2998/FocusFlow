@@ -30,10 +30,18 @@ export interface Task {
   priorityRank?: number
   parentTaskId?: string | null
   listId?: string | null
+  tags?: TagSummary[]
 }
 
 /** Minimal list shape the client UI needs (sidebar, form dropdowns). */
 export interface ListSummary {
+  id: string
+  name: string
+  color?: string | null
+}
+
+/** Minimal tag shape the client UI needs (chips, filter). */
+export interface TagSummary {
   id: string
   name: string
   color?: string | null

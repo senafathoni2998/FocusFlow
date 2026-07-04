@@ -19,6 +19,7 @@ const mk = (o: Partial<Task> & { id: string }): Task =>
     order: o.order,
     priorityRank: o.priorityRank,
     listId: o.listId,
+    tags: o.tags,
   } as Task)
 
 describe("applyFilters — horizon smart lists", () => {
@@ -145,5 +146,26 @@ describe("applyFilters — list", () => {
 
   it("listId undefined = all lists", () => {
     expect(applyFilters(tasks, { ...DEFAULT_FILTERS }).map((t) => t.id).sort()).toEqual(["a", "b", "c"])
+  })
+})
+
+describe("applyFilters — tags", () => {
+  const tasks = [
+    mk({ id: "a", tags: [{ id: "t1", name: "work" }] } as any),
+    mk({ id: "b", tags: [{ id: "t2", name: "home" }] } as any),
+    mk({ id: "c", tags: [{ id: "t1", name: "work" }, { id: "t2", name: "home" }] } as any),
+    mk({ id: "d" }),
+  ]
+
+  it("filters to tasks carrying the tag", () => {
+    expect(applyFilters(tasks, { ...DEFAULT_FILTERS, tags: ["t1"] }).map((t) => t.id).sort()).toEqual(["a", "c"])
+  })
+
+  it("multiple tags require ALL (AND)", () => {
+    expect(applyFilters(tasks, { ...DEFAULT_FILTERS, tags: ["t1", "t2"] }).map((t) => t.id)).toEqual(["c"])
+  })
+
+  it("empty tags = no tag filter", () => {
+    expect(applyFilters(tasks, { ...DEFAULT_FILTERS }).map((t) => t.id)).toHaveLength(4)
   })
 })

@@ -17,6 +17,33 @@ model User {
   tasks      Task[]
   sessions   FocusSession[]
   lists      List[]
+  tags       Tag[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks TaskTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model TaskTag {
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tagId  String
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@index([tagId])
 }
 
 model List {
@@ -60,6 +87,9 @@ model Task {
   // to Inbox (SetNull) rather than deleting them.
   listId String?
   list   List?   @relation(fields: [listId], references: [id], onDelete: SetNull)
+
+  // Tags (many-to-many via the TaskTag join table).
+  tags TaskTag[]
 
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

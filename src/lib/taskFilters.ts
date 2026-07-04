@@ -27,6 +27,8 @@ export interface TaskFilters {
   sort: SortKey
   /** undefined = all lists; null = Inbox (no list); string = that list. */
   listId?: string | null
+  /** Tag ids; a task must carry ALL selected tags (AND). Empty = no tag filter. */
+  tags: string[]
 }
 
 export const DEFAULT_FILTERS: TaskFilters = {
@@ -35,6 +37,7 @@ export const DEFAULT_FILTERS: TaskFilters = {
   priorities: [],
   query: "",
   sort: "manual",
+  tags: [],
 }
 
 /**
@@ -82,6 +85,10 @@ export function matchesFilters(task: Task, filters: TaskFilters, now: Date = new
   if (!matchesHorizonSmart(task, filters.horizon, now, filters.custom)) return false
   if (filters.statuses.length > 0 && !filters.statuses.includes(task.status)) return false
   if (filters.priorities.length > 0 && !filters.priorities.includes(task.priority)) return false
+  if (filters.tags.length > 0) {
+    const taskTagIds = new Set((task.tags ?? []).map((t) => t.id))
+    if (!filters.tags.every((id) => taskTagIds.has(id))) return false
+  }
   if (!matchesQuery(task, filters.query)) return false
   return true
 }

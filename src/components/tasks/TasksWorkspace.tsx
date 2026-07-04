@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import type { Task, ListSummary } from "@/types/task"
+import type { Task, ListSummary, TagSummary } from "@/types/task"
 import {
   applyFilters,
   type TaskFilters,
@@ -13,6 +13,7 @@ import { isTerminalStatus } from "@/lib/taskConstants"
 import { useTaskUpdates } from "@/hooks/useTaskUpdates"
 import { reorderTask } from "@/app/actions/tasks"
 import { createList, deleteList } from "@/app/actions/lists"
+import { deleteTag } from "@/app/actions/tags"
 import { groupSubtasksByParent, topLevelTasks } from "@/lib/subtasks"
 import TaskBoard from "./TaskBoard"
 import TaskListView from "./TaskListView"
@@ -52,12 +53,14 @@ function parseState(sp: URLSearchParams): { filters: TaskFilters; view: ViewMode
   const view: ViewMode = sp.get("view") === "list" ? "list" : "board"
   const listParam = sp.get("list")
   const listId = listParam === "inbox" ? null : listParam ? listParam : undefined
-  return { filters: { horizon, statuses, priorities, query, sort, custom, listId }, view }
+  const tags = (sp.get("tags") ?? "").split(",").filter(Boolean)
+  return { filters: { horizon, statuses, priorities, query, sort, custom, listId, tags }, view }
 }
 
 interface TasksWorkspaceProps {
   tasks: Task[]
   lists: ListSummary[]
+  allTags: TagSummary[]
 }
 
 /**
@@ -66,7 +69,7 @@ interface TasksWorkspaceProps {
  * smart list is a shareable, refresh-surviving link. Optimistic task state and
  * AI-driven refresh are owned here and shared by every view.
  */
-export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
+export default function TasksWorkspace({ tasks, lists, allTags }: TasksWorkspaceProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -117,6 +120,7 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
     filters.query.trim() === "" &&
     !filters.custom &&
     filters.listId === undefined &&
+    filters.tags.length === 0 &&
     filters.sort === "manual"
 
   const setParam = useCallback(
@@ -138,6 +142,7 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
       if ("statuses" in patch) p.status = patch.statuses!.length ? patch.statuses!.join(",") : null
       if ("priorities" in patch) p.priority = patch.priorities!.length ? patch.priorities!.join(",") : null
       if ("query" in patch) p.q = patch.query || null
+      if ("tags" in patch) p.tags = patch.tags!.length ? patch.tags!.join(",") : null
       if ("sort" in patch) p.sort = patch.sort === "manual" ? null : patch.sort ?? null
       if ("horizon" in patch) {
         p.horizon = patch.horizon === "all" ? null : patch.horizon ?? null
@@ -196,6 +201,21 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
       })
     },
     [router, filters.listId, setParam]
+  )
+
+  const handleDeleteTag = useCallback(
+    (id: string) => {
+      if (!window.confirm("Delete this tag? It will be removed from all tasks.")) return
+      deleteTag(id).then((res) => {
+        if (res && "success" in res) {
+          if (filters.tags.includes(id)) {
+            setParam({ tags: filters.tags.filter((t) => t !== id).join(",") || null })
+          }
+          router.refresh()
+        }
+      })
+    },
+    [router, filters.tags, setParam]
   )
 
   const handleReorder = useCallback(
@@ -275,6 +295,8 @@ export default function TasksWorkspace({ tasks, lists }: TasksWorkspaceProps) {
             view={view}
             onChange={handleFilterChange}
             onViewChange={handleViewChange}
+            allTags={allTags}
+            onDeleteTag={handleDeleteTag}
           />
 
           {view === "board" ? (

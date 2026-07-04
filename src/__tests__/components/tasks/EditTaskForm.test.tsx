@@ -271,8 +271,12 @@ describe("EditTaskForm Component", () => {
           priority: "medium",
           dueDate: "2025-01-15",
           listId: null,
+          tags: [],
         })
       })
+      // Let the async handler finish (onUpdate -> onClose) so its trailing calls
+      // don't leak into a later test under parallel load.
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalled())
     })
 
     it("should call onUpdate after successful submission", async () => {
@@ -340,8 +344,10 @@ describe("EditTaskForm Component", () => {
           priority: "high",
           dueDate: "",
           listId: null,
+          tags: [],
         })
       })
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalled())
     })
   })
 
@@ -492,12 +498,15 @@ describe("EditTaskForm Component", () => {
 
     it("should not call onUpdate when cancel is clicked", async () => {
       const user = userEvent.setup()
-      render(<EditTaskForm task={mockTask} onClose={mockOnClose} onUpdate={mockOnUpdate} />)
+      // Local mock: immune to any trailing async onUpdate leaked by a prior test
+      // that wrote the shared mockOnUpdate (cancel itself never calls onUpdate).
+      const onUpdate = jest.fn()
+      render(<EditTaskForm task={mockTask} onClose={mockOnClose} onUpdate={onUpdate} />)
 
       await user.click(screen.getByRole("button", { name: "Cancel" }))
 
       expect(mockUpdateTask).not.toHaveBeenCalled()
-      expect(mockOnUpdate).not.toHaveBeenCalled()
+      expect(onUpdate).not.toHaveBeenCalled()
     })
 
     it("should not submit form when cancel is clicked", async () => {

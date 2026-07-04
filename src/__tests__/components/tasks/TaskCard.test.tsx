@@ -561,4 +561,18 @@ describe("TaskCard Component", () => {
       expect(screen.queryByText(/\d+\/\d+/)).not.toBeInTheDocument()
     })
   })
+
+  describe("Tags", () => {
+    it("renders tag chips when the task has tags", () => {
+      const task = { ...mockTask, tags: [{ id: "t1", name: "work" }, { id: "t2", name: "urgent" }] } as any
+      render(<TaskCard task={task} />)
+      expect(screen.getByText("#work")).toBeInTheDocument()
+      expect(screen.getByText("#urgent")).toBeInTheDocument()
+    })
+
+    it("renders no tag chips when there are none", () => {
+      render(<TaskCard task={mockTask} />)
+      expect(screen.queryByText(/^#/)).not.toBeInTheDocument()
+    })
+  })
 })

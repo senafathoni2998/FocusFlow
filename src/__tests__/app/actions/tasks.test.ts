@@ -544,8 +544,8 @@ describe("Task Actions", () => {
     it("should get tasks for authenticated user", async () => {
       mockAuth.mockResolvedValue(mockSession)
       const tasks = [
-        { id: "task-1", userId: "user-123", title: "Task 1" },
-        { id: "task-2", userId: "user-123", title: "Task 2" }
+        { id: "task-1", userId: "user-123", title: "Task 1", tags: [] },
+        { id: "task-2", userId: "user-123", title: "Task 2", tags: [] }
       ]
       mockPrisma.task.findMany.mockResolvedValue(tasks)
 
@@ -553,14 +553,15 @@ describe("Task Actions", () => {
 
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: { userId: "user-123" },
-        orderBy: [{ order: "asc" }, { createdAt: "desc" }]
+        orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+        include: { tags: { include: { tag: true } } }
       })
       expect(result).toEqual(tasks)
     })
 
     it("should use provided userId directly", async () => {
       const tasks = [
-        { id: "task-1", userId: "custom-user", title: "Task 1" }
+        { id: "task-1", userId: "custom-user", title: "Task 1", tags: [] }
       ]
       mockPrisma.task.findMany.mockResolvedValue(tasks)
 
@@ -569,7 +570,8 @@ describe("Task Actions", () => {
       expect(mockAuth).not.toHaveBeenCalled()
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: { userId: "custom-user" },
-        orderBy: [{ order: "asc" }, { createdAt: "desc" }]
+        orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+        include: { tags: { include: { tag: true } } }
       })
       expect(result).toEqual(tasks)
     })

@@ -9,6 +9,9 @@ const createJestConfig = nextJest({
 const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jest-environment-jsdom',
+  // Guard against spurious timeouts when many suites run in parallel workers
+  // (async waitFor tests can exceed the 5s default under CPU saturation).
+  testTimeout: 15000,
   moduleNameMapper: {
     // ESM-only markdown packages that Jest cannot parse; mocked for component tests.
     '^react-markdown$': '<rootDir>/src/__mocks__/react-markdown.tsx',

@@ -121,6 +121,19 @@ export default function TaskCard({ task, subtasks, onUpdate }: TaskCardProps) {
         </div>
       )}
 
+      {task.tags && task.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {task.tags.map((tag) => (
+            <span
+              key={tag.id}
+              className="text-xs px-2 py-0.5 rounded-full bg-primary-50 text-primary-700 border border-primary-100"
+            >
+              #{tag.name}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           <span

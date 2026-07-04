@@ -257,6 +257,8 @@ describe("CreateTaskForm Component", () => {
           description: "Test description",
           priority: "high",
           dueDate: "2024-12-31",
+          listId: undefined,
+          tags: [],
         })
       })
     })
@@ -312,6 +314,8 @@ describe("CreateTaskForm Component", () => {
           description: "",
           priority: "medium",
           dueDate: "",
+          listId: undefined,
+          tags: [],
         })
       })
     })
