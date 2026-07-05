@@ -15,9 +15,9 @@ const mk = (o: Partial<Habit> = {}): Habit => ({
   name: o.name ?? "Read",
   icon: "📖",
   color: "primary",
-  frequencyType: "daily",
-  weekdays: [],
-  weeklyTarget: 1,
+  frequencyType: o.frequencyType ?? "daily",
+  weekdays: o.weekdays ?? [],
+  weeklyTarget: o.weeklyTarget ?? 1,
   goalType: o.goalType ?? "achieve",
   targetAmount: o.targetAmount ?? 1,
   unit: o.unit ?? null,
@@ -39,5 +39,17 @@ describe("HabitDetail", () => {
     render(<HabitDetail habit={mk()} onClose={onClose} />)
     await userEvent.keyboard("{Escape}")
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it("shows the weekly frequency and a week streak unit", () => {
+    render(<HabitDetail habit={mk({ frequencyType: "weekly", weeklyTarget: 3 })} onClose={() => {}} />)
+    expect(screen.getByText(/per week/)).toBeInTheDocument()
+    // Streak + Best tiles carry the "w" (week) unit.
+    expect(screen.getAllByText(/0w/).length).toBeGreaterThan(0)
+  })
+
+  it("shows specific weekdays in the subtitle", () => {
+    render(<HabitDetail habit={mk({ weekdays: [1, 3, 5] })} onClose={() => {}} />)
+    expect(screen.getByText(/Mo We Fr/)).toBeInTheDocument()
   })
 })

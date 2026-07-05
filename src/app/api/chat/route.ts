@@ -480,7 +480,7 @@ IMPORTANT: When updating a task, find the task by its TITLE in the list above, t
             .slice(0, 15)
             .map((h) => {
               const s = computeHabitStats(h as Habit);
-              return `• "${h.name}" (ID: ${h.id}, streak: ${s.currentStreak}, today: ${s.todayDone ? "done" : "not yet"}, ${h.frequencyType})`;
+              return `• "${h.name}" (ID: ${h.id}, streak: ${s.currentStreak} ${s.streakUnit}s, today: ${s.todayDone ? "done" : "not yet"}, ${h.frequencyType})`;
             })
             .join("\n")}${userHabits.length > 15 ? `\n... and ${userHabits.length - 15} more habits` : ""}`
         : "";
@@ -715,6 +715,7 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
               id: h.id,
               name: h.name,
               currentStreak: s.currentStreak,
+              streakUnit: s.streakUnit,
               todayDone: s.todayDone,
               monthlyRate: s.monthlyRate,
             };

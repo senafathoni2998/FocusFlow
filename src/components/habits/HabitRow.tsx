@@ -28,13 +28,17 @@ export default function HabitRow({ habit, onCheckIn, onEdit, onDelete, onOpenDet
 
   const stats = computeHabitStats(habit)
   const isAmount = habit.goalType === "amount"
+  const isWeekly = habit.frequencyType === "weekly"
   const target = habit.targetAmount ?? 1
   const fill = FILL[habit.color] ?? FILL.primary
 
   const currentStreak = mounted ? stats.currentStreak : 0
   const todayAmount = mounted ? stats.todayAmount : 0
   const monthlyRate = mounted ? stats.monthlyRate : 0
+  const weeklyProgress = mounted ? stats.weeklyProgress : 0
   const todayDone = mounted && stats.todayDone
+  // Streak unit is frequency-derived (clock-free), so it's safe before mount.
+  const streakSuffix = stats.streakUnit === "week" ? "w" : "d"
 
   return (
     <div className="flex items-center gap-3 bg-white rounded-lg border border-gray-200 p-3 hover:shadow-sm transition">
@@ -51,7 +55,12 @@ export default function HabitRow({ habit, onCheckIn, onEdit, onDelete, onOpenDet
           {habit.name}
         </button>
         <div className="text-xs text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-          <span className="tabular-nums">🔥 {currentStreak}d</span>
+          <span className="tabular-nums">🔥 {currentStreak}{streakSuffix}</span>
+          {isWeekly && (
+            <span className="tabular-nums">
+              {weeklyProgress}/{habit.weeklyTarget} this week
+            </span>
+          )}
           {isAmount && (
             <span className="tabular-nums">
               {todayAmount}/{target} {habit.unit ?? ""}

@@ -8,9 +8,9 @@ const mk = (o: Partial<Habit> = {}): Habit => ({
   name: o.name ?? "Read",
   icon: "📖",
   color: "primary",
-  frequencyType: "daily",
-  weekdays: [],
-  weeklyTarget: 1,
+  frequencyType: o.frequencyType ?? "daily",
+  weekdays: o.weekdays ?? [],
+  weeklyTarget: o.weeklyTarget ?? 1,
   goalType: o.goalType ?? "achieve",
   targetAmount: o.targetAmount ?? 1,
   unit: o.unit ?? null,
@@ -49,5 +49,19 @@ describe("HabitRow", () => {
     render(<HabitRow habit={mk({ name: "Read" })} onCheckIn={noop} onEdit={noop} onDelete={noop} onOpenDetail={onOpenDetail} />)
     await userEvent.click(screen.getByRole("button", { name: "Read" }))
     expect(onOpenDetail).toHaveBeenCalled()
+  })
+
+  it("weekly: shows a week streak unit and this-week progress", () => {
+    render(
+      <HabitRow
+        habit={mk({ frequencyType: "weekly", weeklyTarget: 3 })}
+        onCheckIn={noop}
+        onEdit={noop}
+        onDelete={noop}
+        onOpenDetail={noop}
+      />
+    )
+    expect(screen.getByText(/0w/)).toBeInTheDocument()
+    expect(screen.getByText(/0\/3 this week/)).toBeInTheDocument()
   })
 })

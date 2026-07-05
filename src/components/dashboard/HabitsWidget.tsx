@@ -42,7 +42,10 @@ export default function HabitsWidget({ habits }: { habits: Habit[] }) {
               <li key={h.id} className="flex items-center gap-2 text-sm">
                 <span aria-hidden="true">{h.icon}</span>
                 <span className="flex-1 truncate text-gray-700">{h.name}</span>
-                <span className="text-gray-400 tabular-nums">🔥 {stats ? stats.currentStreak : 0}</span>
+                <span className="text-gray-400 tabular-nums">
+                  🔥 {stats ? stats.currentStreak : 0}
+                  {h.frequencyType === "weekly" ? "w" : "d"}
+                </span>
                 <span aria-hidden="true" className={stats?.todayDone ? "text-success-600" : "text-gray-300"}>
                   {stats?.todayDone ? "✓" : "○"}
                 </span>

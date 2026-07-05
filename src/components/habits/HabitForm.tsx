@@ -2,8 +2,17 @@
 
 import { useState } from "react"
 import { createHabit, updateHabit } from "@/app/actions/habits"
-import { HABIT_COLORS } from "@/types/habit"
+import { HABIT_COLORS, WEEKDAY_LABELS } from "@/types/habit"
 import type { Habit } from "@/types/habit"
+
+type FrequencyMode = "daily" | "weekdays" | "weekly"
+
+/** Map an existing habit's stored frequency fields back to the form's mode. */
+function initFrequency(habit?: Habit): FrequencyMode {
+  if (habit?.frequencyType === "weekly") return "weekly"
+  if (habit?.weekdays && habit.weekdays.length > 0) return "weekdays"
+  return "daily"
+}
 
 const COLOR_DOT: Record<string, string> = {
   primary: "bg-primary-500",
@@ -32,8 +41,16 @@ export default function HabitForm({ habit, onClose, onSaved }: HabitFormProps) {
   const [goalType, setGoalType] = useState(habit?.goalType ?? "achieve")
   const [targetAmount, setTargetAmount] = useState(String(habit?.targetAmount ?? 1))
   const [unit, setUnit] = useState(habit?.unit ?? "")
+  const [frequency, setFrequency] = useState<FrequencyMode>(initFrequency(habit))
+  const [weekdays, setWeekdays] = useState<number[]>(habit?.weekdays ?? [])
+  const [weeklyTarget, setWeeklyTarget] = useState(String(habit?.weeklyTarget ?? 3))
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+
+  const toggleWeekday = (d: number) =>
+    setWeekdays((prev) =>
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b)
+    )
 
   const applyPreset = (p: (typeof PRESETS)[number]) => {
     setName(p.name)
@@ -47,6 +64,22 @@ export default function HabitForm({ habit, onClose, onSaved }: HabitFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+
+    // Resolve the three frequency modes back to the stored fields.
+    let frequencyType = "daily"
+    let payloadWeekdays: number[] = []
+    let payloadWeeklyTarget = 1
+    if (frequency === "weekdays") {
+      if (weekdays.length === 0) {
+        setError("Pick at least one day of the week.")
+        return
+      }
+      payloadWeekdays = weekdays
+    } else if (frequency === "weekly") {
+      frequencyType = "weekly"
+      payloadWeeklyTarget = Math.min(7, Math.max(1, Number(weeklyTarget) || 1))
+    }
+
     setLoading(true)
 
     const payload = {
@@ -56,6 +89,9 @@ export default function HabitForm({ habit, onClose, onSaved }: HabitFormProps) {
       goalType,
       targetAmount: goalType === "amount" ? Number(targetAmount) || 1 : 1,
       unit: goalType === "amount" && unit ? unit : undefined,
+      frequencyType,
+      weekdays: payloadWeekdays,
+      weeklyTarget: payloadWeeklyTarget,
     }
 
     const res = habit ? await updateHabit(habit.id, payload) : await createHabit(payload)
@@ -143,6 +179,64 @@ export default function HabitForm({ habit, onClose, onSaved }: HabitFormProps) {
           <option value="amount">Reach an amount</option>
         </select>
       </div>
+
+      <div>
+        <label htmlFor="habit-frequency" className="block text-sm font-medium text-gray-700 mb-2">
+          Frequency
+        </label>
+        <select
+          id="habit-frequency"
+          value={frequency}
+          onChange={(e) => setFrequency(e.target.value as FrequencyMode)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500 text-gray-700"
+        >
+          <option value="daily">Every day</option>
+          <option value="weekdays">Specific days of the week</option>
+          <option value="weekly">A number of times per week</option>
+        </select>
+      </div>
+
+      {frequency === "weekdays" && (
+        <div>
+          <span className="block text-sm font-medium text-gray-700 mb-2">Which days?</span>
+          <div className="flex gap-1.5">
+            {WEEKDAY_LABELS.map((label, d) => {
+              const on = weekdays.includes(d)
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => toggleWeekday(d)}
+                  aria-label={label}
+                  aria-pressed={on}
+                  className={`w-9 h-9 rounded-full text-xs font-medium transition ${
+                    on ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {frequency === "weekly" && (
+        <div>
+          <label htmlFor="habit-weekly-target" className="block text-sm font-medium text-gray-700 mb-2">
+            Times per week
+          </label>
+          <input
+            id="habit-weekly-target"
+            type="number"
+            min="1"
+            max="7"
+            value={weeklyTarget}
+            onChange={(e) => setWeeklyTarget(e.target.value)}
+            className="w-24 px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-primary-500 text-gray-700"
+          />
+        </div>
+      )}
 
       {goalType === "amount" && (
         <div className="grid grid-cols-2 gap-4">

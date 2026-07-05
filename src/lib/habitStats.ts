@@ -26,11 +26,10 @@ export function isSatisfied(habit: Habit, amount: number): boolean {
 }
 
 /**
- * Whether `date` is a scheduled day. Daily habits honor an optional `weekdays`
- * allow-list. NOTE: `frequencyType: "weekly"` with a per-week `weeklyTarget` is
- * NOT yet scored here (every day is treated as a candidate, so a weekly habit
- * would score as must-do-daily). The create/edit form deliberately does not
- * expose frequency/weekly controls yet — do not until this handles it.
+ * Whether `date` is a scheduled day for a DAILY habit — honoring an optional
+ * `weekdays` allow-list (empty = every day). Weekly habits (`frequencyType:
+ * "weekly"`) are scored per-week in computeHabitStats and never consult this
+ * (it returns true for them), so the day-walk it drives applies only to daily.
  */
 export function isScheduledDay(habit: Habit, date: Date): boolean {
   if (habit.frequencyType !== "daily") return true
@@ -45,6 +44,10 @@ export interface HabitStats {
   monthlyRate: number // 0-100
   todayDone: boolean
   todayAmount: number
+  /** Unit the streak counts are in: "day" for daily habits, "week" for weekly. */
+  streakUnit: "day" | "week"
+  /** For a weekly habit: satisfied days so far in the current week (0 for daily). */
+  weeklyProgress: number
 }
 
 /** Sum check-in amounts per calendar day, keyed to match `localDayKey` lookups. */
@@ -65,6 +68,99 @@ export function computeHabitStats(habit: Habit, now: Date = new Date()): HabitSt
 
   let totalDays = 0
   for (const [, amt] of amounts) if (isSatisfied(habit, amt)) totalDays++
+
+  // ---- Weekly habits: score by WEEK, not by day. A week (Sunday-anchored,
+  // local) is "satisfied" once it has >= weeklyTarget satisfied days; streaks
+  // count consecutive satisfied weeks (the current, still-open week never breaks
+  // one), and the month rate is satisfied vs elapsed weeks whose Sunday anchor
+  // falls in this month (mirroring the daily rate's "today is in the denominator").
+  if (habit.frequencyType === "weekly") {
+    const target = Math.max(1, habit.weeklyTarget ?? 1)
+    const weekStartOf = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay())
+    const curWeekStart = weekStartOf(now)
+    const weekAt = (w: number) =>
+      new Date(curWeekStart.getFullYear(), curWeekStart.getMonth(), curWeekStart.getDate() - 7 * w)
+    const satisfiedInWeek = (weekStart: Date): number => {
+      let c = 0
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i)
+        if (day > now) break // days that haven't happened yet don't count
+        if (isSatisfied(habit, amounts.get(localDayKey(day)) ?? 0)) c++
+      }
+      return c
+    }
+
+    const weeklyProgress = satisfiedInWeek(curWeekStart)
+
+    // Current streak (weeks): walk back; the current open week doesn't break it.
+    let currentStreak = 0
+    for (let w = 0; w < 156; w++) {
+      if (satisfiedInWeek(weekAt(w)) >= target) {
+        currentStreak++
+      } else if (w === 0) {
+        continue
+      } else {
+        break
+      }
+    }
+
+    // Best streak (weeks) over ~2 years.
+    let bestStreak = 0
+    let run = 0
+    for (let w = 104; w >= 0; w--) {
+      if (satisfiedInWeek(weekAt(w)) >= target) {
+        run++
+        if (run > bestStreak) bestStreak = run
+      } else {
+        run = 0
+      }
+    }
+    if (currentStreak > bestStreak) bestStreak = currentStreak
+
+    // This-month rate: satisfied vs elapsed weeks anchored (by Sunday) in this
+    // month. Don't count weeks before the habit existed, and don't count the
+    // sign-up week as a miss if it was impossible to complete (fewer post-creation
+    // days than the target) — mirroring how the daily path clamps to the exact
+    // creation day rather than the whole period.
+    const created = habit.createdAt ? new Date(habit.createdAt) : null
+    const createdMidnight = created
+      ? new Date(created.getFullYear(), created.getMonth(), created.getDate())
+      : null
+    const createdWeekStart = createdMidnight ? weekStartOf(createdMidnight) : null
+    let weeks = 0
+    let satisfiedWeeks = 0
+    for (let w = 0; w < 6; w++) {
+      const ws = weekAt(w)
+      if (ws.getMonth() !== now.getMonth() || ws.getFullYear() !== now.getFullYear()) continue
+      if (createdWeekStart && ws < createdWeekStart) continue
+      const satisfied = satisfiedInWeek(ws)
+      if (createdMidnight && createdWeekStart && ws.getTime() === createdWeekStart.getTime()) {
+        // Count post-creation, elapsed days available in the sign-up week.
+        let available = 0
+        for (let i = 0; i < 7; i++) {
+          const day = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + i)
+          if (day > now) break
+          if (day >= createdMidnight) available++
+        }
+        if (available < target && satisfied < target) continue // was never achievable
+      }
+      weeks++
+      if (satisfied >= target) satisfiedWeeks++
+    }
+    const monthlyRate = weeks > 0 ? Math.round((satisfiedWeeks / weeks) * 100) : 0
+
+    return {
+      currentStreak,
+      bestStreak,
+      totalDays,
+      monthlyRate,
+      todayDone,
+      todayAmount,
+      streakUnit: "week",
+      weeklyProgress,
+    }
+  }
 
   const dayAt = (offset: number) =>
     new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
@@ -120,5 +216,14 @@ export function computeHabitStats(habit: Habit, now: Date = new Date()): HabitSt
   }
   const monthlyRate = scheduled > 0 ? Math.round((satisfied / scheduled) * 100) : 0
 
-  return { currentStreak, bestStreak, totalDays, monthlyRate, todayDone, todayAmount }
+  return {
+    currentStreak,
+    bestStreak,
+    totalDays,
+    monthlyRate,
+    todayDone,
+    todayAmount,
+    streakUnit: "day",
+    weeklyProgress: 0,
+  }
 }

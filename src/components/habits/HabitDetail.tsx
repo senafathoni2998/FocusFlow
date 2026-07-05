@@ -2,8 +2,18 @@
 
 import { useEffect } from "react"
 import type { Habit } from "@/types/habit"
+import { WEEKDAY_LABELS } from "@/types/habit"
 import { computeHabitStats } from "@/lib/habitStats"
 import HabitHeatmap from "./HabitHeatmap"
+
+/** Human-readable frequency, e.g. "every day", "Mo We Fr", "3× per week". */
+function frequencyLabel(habit: Habit): string {
+  if (habit.frequencyType === "weekly") return `${habit.weeklyTarget ?? 1}× per week`
+  if (habit.weekdays && habit.weekdays.length > 0) {
+    return habit.weekdays.map((d) => WEEKDAY_LABELS[d]).join(" ")
+  }
+  return "every day"
+}
 
 interface HabitDetailProps {
   habit: Habit
@@ -26,10 +36,11 @@ export default function HabitDetail({ habit, onClose }: HabitDetailProps) {
   const now = new Date()
   const stats = computeHabitStats(habit, now)
   const target = habit.targetAmount ?? 1
+  const unit = stats.streakUnit === "week" ? "w" : "d"
 
   const statItems = [
-    { label: "Streak", value: `🔥 ${stats.currentStreak}` },
-    { label: "Best", value: `${stats.bestStreak}d` },
+    { label: "Streak", value: `🔥 ${stats.currentStreak}${unit}` },
+    { label: "Best", value: `${stats.bestStreak}${unit}` },
     { label: "Total", value: `${stats.totalDays}` },
     { label: "This month", value: `${stats.monthlyRate}%` },
   ]
@@ -51,8 +62,10 @@ export default function HabitDetail({ habit, onClose }: HabitDetailProps) {
             <h2 className="text-xl font-bold text-gray-900 break-words">{habit.name}</h2>
             <p className="text-sm text-gray-500">
               {habit.goalType === "amount"
-                ? `Reach ${target}${habit.unit ? ` ${habit.unit}` : ""} a day`
-                : "Mark done each day"}
+                ? `Reach ${target}${habit.unit ? ` ${habit.unit}` : ""}`
+                : "Mark done"}
+              {" · "}
+              {frequencyLabel(habit)}
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600">

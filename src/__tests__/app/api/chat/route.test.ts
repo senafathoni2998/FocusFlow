@@ -1104,9 +1104,9 @@ describe("Chat API Route", () => {
       const data = await response.json()
 
       expect(data.functionCall?.name).toBe("listHabits")
-      // A never-checked-in habit created today: 0 streak, not done, 0% this month.
+      // A never-checked-in daily habit created today: 0 streak, not done, 0% month.
       expect(data.functionCall?.result).toEqual([
-        { id: "h-1", name: "Meditate", currentStreak: 0, todayDone: false, monthlyRate: 0 },
+        { id: "h-1", name: "Meditate", currentStreak: 0, streakUnit: "day", todayDone: false, monthlyRate: 0 },
       ])
     })
   })

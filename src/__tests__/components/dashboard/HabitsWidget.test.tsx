@@ -13,9 +13,9 @@ const mk = (o: Partial<Habit> = {}): Habit => ({
   name: o.name ?? "Read",
   icon: "📖",
   color: "primary",
-  frequencyType: "daily",
-  weekdays: [],
-  weeklyTarget: 1,
+  frequencyType: o.frequencyType ?? "daily",
+  weekdays: o.weekdays ?? [],
+  weeklyTarget: o.weeklyTarget ?? 1,
   goalType: "achieve",
   targetAmount: 1,
   unit: null,
@@ -38,5 +38,10 @@ describe("HabitsWidget", () => {
   it("links to the habits page", () => {
     render(<HabitsWidget habits={[mk()]} />)
     expect(screen.getByRole("link", { name: /View all/ })).toHaveAttribute("href", "/habits")
+  })
+
+  it("shows a week streak unit for weekly habits", () => {
+    render(<HabitsWidget habits={[mk({ frequencyType: "weekly", weeklyTarget: 3 })]} />)
+    expect(screen.getByText(/0w/)).toBeInTheDocument()
   })
 })

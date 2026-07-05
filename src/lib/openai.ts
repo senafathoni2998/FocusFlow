@@ -82,7 +82,7 @@ Active goals: ${JSON.stringify(activeGoals.slice(0, 5).map(g => ({
 
 Habits: ${JSON.stringify(userHabits.slice(0, 5).map(h => {
   const s = computeHabitStats(h as Habit)
-  return { name: h.name, streak: s.currentStreak, doneToday: s.todayDone }
+  return { name: h.name, streak: s.currentStreak, streakUnit: s.streakUnit, doneToday: s.todayDone }
 }))}
 
 Provide 3-5 specific, actionable recommendations to improve productivity.`
@@ -158,10 +158,18 @@ function getDefaultInsights(
   // Habit-derived nudges: celebrate a streak, or flag habits still open today.
   // Compute stats once per habit, then derive both signals from that.
   const habitStats = userHabits.map((h) => computeHabitStats(h as Habit))
-  const bestStreak = habitStats.reduce((max, s) => Math.max(max, s.currentStreak), 0)
+  // Track the top streak WITH its unit — weekly habits count in weeks, not days.
+  let bestStreak = 0
+  let bestStreakUnit: "day" | "week" = "day"
+  for (const s of habitStats) {
+    if (s.currentStreak > bestStreak) {
+      bestStreak = s.currentStreak
+      bestStreakUnit = s.streakUnit
+    }
+  }
   const pendingHabitsToday = habitStats.filter((s) => !s.todayDone).length
   if (bestStreak >= 3) {
-    insights.push(`🔥 You're on a ${bestStreak}-day habit streak — keep it alive today!`)
+    insights.push(`🔥 You're on a ${bestStreak}-${bestStreakUnit} habit streak — keep it alive today!`)
   } else if (pendingHabitsToday > 0) {
     insights.push(`📅 ${pendingHabitsToday} habit${pendingHabitsToday > 1 ? "s" : ""} still need a check-in today.`)
   }
