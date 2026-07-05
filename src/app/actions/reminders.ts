@@ -4,10 +4,11 @@ import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 
 /**
- * Reminders are store-only for now (a locked product decision): we persist the
- * trigger times and expose a "dispatch query" of what's due, but there is no
- * delivery channel (push/email) yet. A future dispatcher would poll getDueReminders,
- * deliver, then call markRemindersDispatched.
+ * Reminder dispatch queries. The in-app ReminderDispatcher (a client component
+ * mounted in the layout) polls getDueReminders while the app is open, shows a
+ * Web Notification + banner, then calls markRemindersDispatched so each fires
+ * once. Background delivery when the app is closed would need a service worker +
+ * Web Push (a future upgrade); the persisted triggerAt/dispatchedAt already support it.
  */
 
 /** Fired-and-undispatched reminders for the session user, soonest first. */

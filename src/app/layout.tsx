@@ -4,6 +4,7 @@ import Navigation from "@/components/Navigation";
 import { auth } from "@/lib/auth";
 import Providers from "@/components/Providers";
 import ChatWidget from "@/components/chat/ChatWidget";
+import ReminderDispatcher from "@/components/reminders/ReminderDispatcher";
 
 export const metadata: Metadata = {
   title: "FocusFlow - Productivity Dashboard",
@@ -24,6 +25,7 @@ export default async function RootLayout({
           <Navigation />
           {children}
           {session?.user && <ChatWidget />}
+          {session?.user && <ReminderDispatcher />}
         </Providers>
       </body>
     </html>

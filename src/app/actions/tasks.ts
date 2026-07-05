@@ -272,9 +272,11 @@ export async function updateTask(
   }
 
   try {
-    // Verify task ownership
+    // Verify task ownership (and load existing reminders so we can diff, not
+    // replace, them below — a full replace would resurface already-delivered ones).
     const existingTask = await prisma.task.findFirst({
       where: { id, userId: session.user.id },
+      include: { reminders: { select: { id: true, triggerAt: true } } },
     })
 
     if (!existingTask) {
@@ -377,11 +379,24 @@ export async function updateTask(
     }
 
     if (data.reminders !== undefined) {
-      // Replace the full reminder set: clear existing, then recreate.
-      updateData.reminders = {
-        deleteMany: {},
-        create: reminderCreateInput(data.reminders, session.user.id),
-      }
+      // Diff instead of replace: keep reminders whose instant is unchanged (so a
+      // delivered reminder's dispatchedAt survives an unrelated task edit), delete
+      // the ones that were removed, and create only the genuinely new instants.
+      const incoming = reminderCreateInput(data.reminders, session.user.id)
+      const incomingTimes = new Set(incoming.map((r) => r.triggerAt.getTime()))
+      const existing = (existingTask.reminders ?? []) as { id: string; triggerAt: Date }[]
+      const existingTimes = new Set(existing.map((r) => new Date(r.triggerAt).getTime()))
+
+      const toDeleteIds = existing
+        .filter((r) => !incomingTimes.has(new Date(r.triggerAt).getTime()))
+        .map((r) => r.id)
+      const toCreate = incoming.filter((r) => !existingTimes.has(r.triggerAt.getTime()))
+
+      const reminderWrite: { deleteMany?: { id: { in: string[] } }; create?: typeof toCreate } = {}
+      if (toDeleteIds.length) reminderWrite.deleteMany = { id: { in: toDeleteIds } }
+      if (toCreate.length) reminderWrite.create = toCreate
+      // Only touch the relation when something actually changed.
+      if (toDeleteIds.length || toCreate.length) updateData.reminders = reminderWrite
     }
 
     // Recurrence handled via scalar recurrenceId + separate rule queries, so the

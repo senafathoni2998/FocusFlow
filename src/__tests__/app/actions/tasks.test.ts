@@ -307,15 +307,70 @@ describe("Task Actions", () => {
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
-    it("replaces the full reminder set", async () => {
+    it("diffs reminders: creates only new instants, leaving unchanged ones alone", async () => {
       mockAuth.mockResolvedValue(mockSession)
-      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({ id: "task-1", userId: "user-123" })
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        reminders: [{ id: "rem-keep", triggerAt: new Date("2026-07-10T14:30") }],
+      })
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+      // Keep the existing 14:30 reminder, add a new one.
+      await updateTask("task-1", { reminders: ["2026-07-10T14:30", "2026-07-11T09:00"] })
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data.reminders.deleteMany).toBeUndefined() // nothing removed
+      expect(data.reminders.create).toHaveLength(1) // only the new instant
+      expect(data.reminders.create[0].triggerAt.getTime()).toBe(
+        new Date("2026-07-11T09:00").getTime()
+      )
+    })
+
+    it("diffs reminders: deletes only the removed ones by id", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        reminders: [
+          { id: "rem-a", triggerAt: new Date("2026-07-10T14:30") },
+          { id: "rem-b", triggerAt: new Date("2026-07-11T09:00") },
+        ],
+      })
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+      await updateTask("task-1", { reminders: ["2026-07-10T14:30"] }) // drop rem-b
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data.reminders.deleteMany).toEqual({ id: { in: ["rem-b"] } })
+      expect(data.reminders.create).toBeUndefined()
+    })
+
+    it("diffs reminders: an edited time deletes the old row and creates the new instant", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        reminders: [{ id: "rem-a", triggerAt: new Date("2026-07-10T14:30") }],
+      })
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+      await updateTask("task-1", { reminders: ["2026-07-10T15:00"] }) // moved 14:30 → 15:00
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data.reminders.deleteMany).toEqual({ id: { in: ["rem-a"] } })
+      expect(data.reminders.create).toHaveLength(1)
+      expect(data.reminders.create[0].triggerAt.getTime()).toBe(
+        new Date("2026-07-10T15:00").getTime()
+      )
+    })
+
+    it("diffs reminders: leaves the relation untouched when the set is unchanged (no re-fire)", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        reminders: [{ id: "rem-a", triggerAt: new Date("2026-07-10T14:30") }],
+      })
       mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
       await updateTask("task-1", { reminders: ["2026-07-10T14:30"] })
       const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
-      expect(data.reminders.deleteMany).toEqual({})
-      expect(data.reminders.create).toHaveLength(1)
-      expect(data.reminders.create[0].userId).toBe("user-123")
+      // No writes to the relation → the existing row's dispatchedAt survives.
+      expect(data.reminders).toBeUndefined()
     })
 
     it("should return error when task not found", async () => {
@@ -463,9 +518,9 @@ describe("Task Actions", () => {
 
       const result = await updateTask("task-1", { title: "Updated" })
 
-      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith({
-        where: { id: "task-1", userId: "user-123" }
-      })
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "task-1", userId: "user-123" } })
+      )
       expect(result).toEqual({ error: "Task not found" })
     })
 
