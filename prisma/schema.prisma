@@ -25,6 +25,7 @@ model User {
   habits     Habit[]
   goals      Goal[]
   reminders  Reminder[]
+  savedFilters SavedFilter[]
 }
 
 model Habit {
@@ -156,6 +157,22 @@ model List {
 
   tasks Task[]
 
+  @@index([userId])
+}
+
+model SavedFilter {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  // The canonical URL search string of the saved view (e.g.
+  // "horizon=thisMonth&priority=high&sort=priority"), whitelisted to known keys.
+  query     String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
   @@index([userId])
 }
 

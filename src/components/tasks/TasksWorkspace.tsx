@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import type { Task, ListSummary, TagSummary } from "@/types/task"
+import type { Task, ListSummary, TagSummary, SavedFilterSummary } from "@/types/task"
 import type { GoalOption } from "@/types/goal"
 import {
   applyFilters,
@@ -10,10 +10,12 @@ import {
   type SortKey,
 } from "@/lib/taskFilters"
 import { type DateHorizon, isDateHorizon } from "@/lib/dateHorizon"
+import { canonicalizeQuery } from "@/lib/savedFilters"
 import { isTerminalStatus } from "@/lib/taskConstants"
 import { useTaskUpdates } from "@/hooks/useTaskUpdates"
 import { reorderTask, completeTask } from "@/app/actions/tasks"
 import { createList, deleteList } from "@/app/actions/lists"
+import { createSavedFilter, deleteSavedFilter } from "@/app/actions/savedFilters"
 import { deleteTag } from "@/app/actions/tags"
 import { groupSubtasksByParent, topLevelTasks } from "@/lib/subtasks"
 import TaskBoard from "./TaskBoard"
@@ -63,6 +65,7 @@ interface TasksWorkspaceProps {
   lists: ListSummary[]
   allTags: TagSummary[]
   goals: GoalOption[]
+  savedFilters: SavedFilterSummary[]
 }
 
 /**
@@ -71,7 +74,13 @@ interface TasksWorkspaceProps {
  * smart list is a shareable, refresh-surviving link. Optimistic task state and
  * AI-driven refresh are owned here and shared by every view.
  */
-export default function TasksWorkspace({ tasks, lists, allTags, goals }: TasksWorkspaceProps) {
+export default function TasksWorkspace({
+  tasks,
+  lists,
+  allTags,
+  goals,
+  savedFilters = [],
+}: TasksWorkspaceProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -95,6 +104,17 @@ export default function TasksWorkspace({ tasks, lists, allTags, goals }: TasksWo
   const { filters, view } = useMemo(
     () => parseState(new URLSearchParams(searchParams.toString())),
     [searchParams]
+  )
+
+  // Canonical form of the current view's query — used to save it and to highlight
+  // the matching saved view. Matches the server's canonicalization exactly.
+  const currentQuery = useMemo(
+    () => canonicalizeQuery(searchParams.toString()),
+    [searchParams]
+  )
+  const activeSavedId = useMemo(
+    () => savedFilters.find((f) => f.query === currentQuery)?.id ?? null,
+    [savedFilters, currentQuery]
   )
 
   // Subtasks (tasks with a parent) never appear as top-level cards; they surface
@@ -220,6 +240,34 @@ export default function TasksWorkspace({ tasks, lists, allTags, goals }: TasksWo
     [router, filters.tags, setParam]
   )
 
+  // Save the current view under a name. Returns the action result so the sidebar
+  // can surface a duplicate-name error inline.
+  const handleSaveFilter = useCallback(
+    async (name: string) => {
+      const res = await createSavedFilter({ name, query: currentQuery })
+      if (res && "success" in res) router.refresh()
+      return res
+    },
+    [currentQuery, router]
+  )
+
+  const handleApplyFilter = useCallback(
+    (query: string) => {
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+    },
+    [router, pathname]
+  )
+
+  const handleDeleteFilter = useCallback(
+    (id: string) => {
+      if (!window.confirm("Delete this saved view?")) return
+      deleteSavedFilter(id).then((res) => {
+        if (res && "success" in res) router.refresh()
+      })
+    },
+    [router]
+  )
+
   const handleReorder = useCallback(
     (id: string, newStatus: string, newOrder: number) => {
       // Optimistic: update the task in place; views re-derive from localTasks.
@@ -296,6 +344,11 @@ export default function TasksWorkspace({ tasks, lists, allTags, goals }: TasksWo
           onSelectList={handleSelectList}
           onCreateList={handleCreateList}
           onDeleteList={handleDeleteList}
+          savedFilters={savedFilters}
+          activeSavedId={activeSavedId}
+          onSaveFilter={handleSaveFilter}
+          onApplyFilter={handleApplyFilter}
+          onDeleteFilter={handleDeleteFilter}
         />
 
         <div className="flex-1 min-w-0">

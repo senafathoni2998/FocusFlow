@@ -45,6 +45,11 @@ jest.mock("@/app/actions/goals", () => ({
   getGoalOptions: jest.fn().mockResolvedValue([]),
 }))
 
+// Mock @/app/actions/savedFilters (page fetches the user's saved views)
+jest.mock("@/app/actions/savedFilters", () => ({
+  getSavedFilters: jest.fn().mockResolvedValue([]),
+}))
+
 // Mock TasksWorkspace (the page's child component)
 jest.mock("@/components/tasks/TasksWorkspace", () => {
   return function MockTasksWorkspace({ tasks }: { tasks: any[] }) {

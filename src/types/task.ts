@@ -62,6 +62,13 @@ export interface TagSummary {
   color?: string | null
 }
 
+/** A saved task view: a name + the canonical URL query it restores. */
+export interface SavedFilterSummary {
+  id: string
+  name: string
+  query: string
+}
+
 /** Presentation view modes for the task workspace (used from Phase 2 onward). */
 export type ViewMode = "board" | "list" | "calendar" | "matrix"
 

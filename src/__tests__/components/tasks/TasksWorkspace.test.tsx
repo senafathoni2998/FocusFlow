@@ -30,6 +30,11 @@ jest.mock("@/app/actions/lists", () => ({
 jest.mock("@/app/actions/tags", () => ({
   deleteTag: jest.fn().mockResolvedValue({ success: true }),
 }))
+jest.mock("@/app/actions/savedFilters", () => ({
+  createSavedFilter: jest.fn().mockResolvedValue({ success: true }),
+  deleteSavedFilter: jest.fn().mockResolvedValue({ success: true }),
+  getSavedFilters: jest.fn().mockResolvedValue([]),
+}))
 
 jest.mock("@/components/tasks/TaskBoard", () => {
   return function MockBoard({ tasks }: any) {
@@ -198,5 +203,23 @@ describe("TasksWorkspace", () => {
     const tagged = { ...mk("a"), tags: [{ id: "t1", name: "work" }] } as any
     render(<TasksWorkspace tasks={[tagged, mk("b")]} lists={testLists} allTags={testTags} />)
     expect(screen.getByTestId("board")).toHaveAttribute("data-count", "1")
+  })
+
+  it("applies a saved view by replacing the URL with its query", async () => {
+    const savedFilters = [{ id: "s1", name: "Saved A", query: "priority=high" }]
+    render(
+      <TasksWorkspace tasks={tasks} lists={testLists} allTags={testTags} savedFilters={savedFilters} />
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Saved A" }))
+    expect(mockReplace).toHaveBeenCalledWith("/tasks?priority=high", { scroll: false })
+  })
+
+  it("highlights the saved view whose query matches the current URL", () => {
+    mockSearch = "horizon=today"
+    const savedFilters = [{ id: "s1", name: "Saved A", query: "horizon=today" }]
+    render(
+      <TasksWorkspace tasks={tasks} lists={testLists} allTags={testTags} savedFilters={savedFilters} />
+    )
+    expect(screen.getByRole("button", { name: "Saved A" })).toHaveAttribute("aria-current", "page")
   })
 })
