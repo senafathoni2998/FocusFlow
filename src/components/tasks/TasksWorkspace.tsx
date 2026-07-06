@@ -20,6 +20,8 @@ import { deleteTag } from "@/app/actions/tags"
 import { groupSubtasksByParent, topLevelTasks } from "@/lib/subtasks"
 import TaskBoard from "./TaskBoard"
 import TaskListView from "./TaskListView"
+import TaskCalendarView from "./TaskCalendarView"
+import TaskMatrixView from "./TaskMatrixView"
 import SmartListSidebar from "./SmartListSidebar"
 import FilterBar, { type ViewMode } from "./FilterBar"
 import CreateTaskForm from "./CreateTaskForm"
@@ -53,7 +55,11 @@ function parseState(sp: URLSearchParams): { filters: TaskFilters; view: ViewMode
   const from = parseLocalDate(sp.get("from"))
   const to = parseLocalDate(sp.get("to"))
   const custom = from || to ? { from, to } : undefined
-  const view: ViewMode = sp.get("view") === "list" ? "list" : "board"
+  const viewParam = sp.get("view")
+  const view: ViewMode =
+    viewParam === "list" || viewParam === "calendar" || viewParam === "matrix"
+      ? viewParam
+      : "board"
   const listParam = sp.get("list")
   const listId = listParam === "inbox" ? null : listParam ? listParam : undefined
   const tags = (sp.get("tags") ?? "").split(",").filter(Boolean)
@@ -123,15 +129,19 @@ export default function TasksWorkspace({
   const topLevel = useMemo(() => topLevelTasks(localTasks), [localTasks])
   const subtasksByParent = useMemo(() => groupSubtasksByParent(localTasks), [localTasks])
 
+  // Calendar and matrix views group tasks by date / urgency themselves, so the
+  // horizon filter (and the custom range) don't apply — they'd conflict with the
+  // calendar's own month navigation and the matrix's quadrants.
+  const isDateView = view === "calendar" || view === "matrix"
+
   // Horizon filtering is the only time-dependent part; before mount we force
   // horizon "all" so server markup and first client render agree (no hydration
-  // mismatch), then re-filter once `now` is set.
+  // mismatch), then re-filter once `now` is set. Date views always force it off.
   const visible = useMemo(() => {
-    const effective: TaskFilters = now
-      ? filters
-      : { ...filters, horizon: "all", custom: undefined }
+    const effective: TaskFilters =
+      now && !isDateView ? filters : { ...filters, horizon: "all", custom: undefined }
     return applyFilters(topLevel, effective, now ?? new Date(0))
-  }, [topLevel, filters, now])
+  }, [topLevel, filters, now, isDateView])
 
   // Manual drag-reorder is only meaningful (and collision-safe) when the board
   // shows the complete, manually-ordered set — not a filtered subset.
@@ -369,8 +379,22 @@ export default function TasksWorkspace({
               reorderable={reorderable}
               subtasksByParent={subtasksByParent}
             />
-          ) : (
+          ) : view === "list" ? (
             <TaskListView
+              tasks={visible}
+              now={now}
+              onUpdate={handleUpdate}
+              subtasksByParent={subtasksByParent}
+            />
+          ) : view === "calendar" ? (
+            <TaskCalendarView
+              tasks={visible}
+              now={now}
+              onUpdate={handleUpdate}
+              subtasksByParent={subtasksByParent}
+            />
+          ) : (
+            <TaskMatrixView
               tasks={visible}
               now={now}
               onUpdate={handleUpdate}

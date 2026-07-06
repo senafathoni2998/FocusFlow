@@ -46,6 +46,16 @@ jest.mock("@/components/tasks/TaskListView", () => {
     return <div data-testid="list" data-count={tasks.length}>List</div>
   }
 })
+jest.mock("@/components/tasks/TaskCalendarView", () => {
+  return function MockCalendar({ tasks }: any) {
+    return <div data-testid="calendar" data-count={tasks.length}>Calendar</div>
+  }
+})
+jest.mock("@/components/tasks/TaskMatrixView", () => {
+  return function MockMatrix({ tasks }: any) {
+    return <div data-testid="matrix" data-count={tasks.length}>Matrix</div>
+  }
+})
 jest.mock("@/components/tasks/CreateTaskForm", () => {
   return function MockCreate({ onClose }: any) {
     return (
@@ -221,5 +231,26 @@ describe("TasksWorkspace", () => {
       <TasksWorkspace tasks={tasks} lists={testLists} allTags={testTags} savedFilters={savedFilters} />
     )
     expect(screen.getByRole("button", { name: "Saved A" })).toHaveAttribute("aria-current", "page")
+  })
+
+  it("renders the calendar view for ?view=calendar", () => {
+    mockSearch = "view=calendar"
+    render(<TasksWorkspace tasks={tasks} lists={testLists} allTags={testTags} />)
+    expect(screen.getByTestId("calendar")).toBeInTheDocument()
+    expect(screen.queryByTestId("board")).not.toBeInTheDocument()
+  })
+
+  it("renders the matrix view for ?view=matrix", () => {
+    mockSearch = "view=matrix"
+    render(<TasksWorkspace tasks={tasks} lists={testLists} allTags={testTags} />)
+    expect(screen.getByTestId("matrix")).toBeInTheDocument()
+  })
+
+  it("calendar/matrix ignore the horizon filter (show all tasks, not the horizon subset)", () => {
+    // With a board + horizon=today only today's task shows; the calendar ignores
+    // the horizon and shows every top-level task.
+    mockSearch = "view=calendar&horizon=today"
+    render(<TasksWorkspace tasks={tasks} lists={testLists} allTags={testTags} />)
+    expect(screen.getByTestId("calendar")).toHaveAttribute("data-count", String(tasks.length))
   })
 })

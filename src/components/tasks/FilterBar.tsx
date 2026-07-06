@@ -3,7 +3,9 @@
 import type { TaskFilters, SortKey } from "@/lib/taskFilters"
 import type { TagSummary } from "@/types/task"
 
-export type ViewMode = "board" | "list"
+export type ViewMode = "board" | "list" | "calendar" | "matrix"
+
+const VIEW_MODES: ViewMode[] = ["board", "list", "calendar", "matrix"]
 
 const STATUS_OPTIONS = [
   { value: "todo", label: "To Do" },
@@ -54,10 +56,11 @@ export default function FilterBar({ filters, view, onChange, onViewChange, allTa
     <div className="flex flex-wrap items-center gap-2 mb-6">
       {/* View switcher */}
       <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
-        {(["board", "list"] as ViewMode[]).map((v) => (
+        {VIEW_MODES.map((v) => (
           <button
             key={v}
             type="button"
+            aria-pressed={view === v}
             onClick={() => onViewChange(v)}
             className={`px-3 py-1.5 text-sm capitalize ${
               view === v
@@ -176,29 +179,31 @@ export default function FilterBar({ filters, view, onChange, onViewChange, allTa
         </select>
       )}
 
-      {/* Custom date range */}
-      <div className="flex items-center gap-1 text-xs text-gray-500 ml-auto">
-        <span className="hidden sm:inline">Range</span>
-        <input
-          type="date"
-          value={toYMD(filters.custom?.from)}
-          onChange={(e) =>
-            onChange({ custom: { from: fromYMD(e.target.value), to: filters.custom?.to ?? null } })
-          }
-          aria-label="Custom range from"
-          className="px-2 py-1 border border-gray-200 rounded text-gray-700"
-        />
-        <span aria-hidden="true">→</span>
-        <input
-          type="date"
-          value={toYMD(filters.custom?.to)}
-          onChange={(e) =>
-            onChange({ custom: { from: filters.custom?.from ?? null, to: fromYMD(e.target.value) } })
-          }
-          aria-label="Custom range to"
-          className="px-2 py-1 border border-gray-200 rounded text-gray-700"
-        />
-      </div>
+      {/* Custom date range — board/list only (calendar/matrix group by date themselves) */}
+      {(view === "board" || view === "list") && (
+        <div className="flex items-center gap-1 text-xs text-gray-500 ml-auto">
+          <span className="hidden sm:inline">Range</span>
+          <input
+            type="date"
+            value={toYMD(filters.custom?.from)}
+            onChange={(e) =>
+              onChange({ custom: { from: fromYMD(e.target.value), to: filters.custom?.to ?? null } })
+            }
+            aria-label="Custom range from"
+            className="px-2 py-1 border border-gray-200 rounded text-gray-700"
+          />
+          <span aria-hidden="true">→</span>
+          <input
+            type="date"
+            value={toYMD(filters.custom?.to)}
+            onChange={(e) =>
+              onChange({ custom: { from: filters.custom?.from ?? null, to: fromYMD(e.target.value) } })
+            }
+            aria-label="Custom range to"
+            className="px-2 py-1 border border-gray-200 rounded text-gray-700"
+          />
+        </div>
+      )}
     </div>
   )
 }
