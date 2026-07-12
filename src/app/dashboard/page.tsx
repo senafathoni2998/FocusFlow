@@ -4,6 +4,7 @@ import { headers } from "next/headers"
 import StatsCards from "@/components/dashboard/StatsCards"
 import Charts from "@/components/dashboard/Charts"
 import AIInsights from "@/components/dashboard/AIInsights"
+import WeeklyReview from "@/components/dashboard/WeeklyReview"
 import GoalsWidget from "@/components/dashboard/GoalsWidget"
 import HabitsWidget from "@/components/dashboard/HabitsWidget"
 import { getGoals } from "@/app/actions/goals"
@@ -76,6 +77,7 @@ export default async function DashboardPage() {
 
           <div className="lg:col-span-1 space-y-6">
             <AIInsights />
+            <WeeklyReview />
             <GoalsWidget goals={goals} />
             <HabitsWidget habits={habits} />
           </div>
