@@ -52,6 +52,9 @@ interface EditTaskFormProps {
     tags?: TagSummary[]
     recurrence?: RecurrenceSummary | null
     reminders?: ReminderSummary[]
+    timeEstimateMin?: number | null
+    estimatedPomos?: number | null
+    actualMin?: number
   }
   subtasks?: Task[]
   onClose?: () => void
@@ -67,6 +70,15 @@ const toDateInputValue = (date: Date | string): string => {
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
   return `${y}-${m}-${day}`
+}
+
+// Compact "1h 15m" / "45m" from a minute count.
+const formatMinutes = (mins: number): string => {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h && m) return `${h}h ${m}m`
+  if (h) return `${h}h`
+  return `${m}m`
 }
 
 // Stored reminder instant -> local "YYYY-MM-DDTHH:mm" for <input type="datetime-local">.
@@ -87,6 +99,12 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
   const [goalId, setGoalId] = useState(task.goalId ?? "")
   const [tags, setTags] = useState((task.tags ?? []).map((t) => t.name).join(", "))
   const [recurrence, setRecurrence] = useState(task.recurrence?.freq ?? "")
+  const [timeEstimateMin, setTimeEstimateMin] = useState(
+    task.timeEstimateMin != null ? String(task.timeEstimateMin) : "",
+  )
+  const [estimatedPomos, setEstimatedPomos] = useState(
+    task.estimatedPomos != null ? String(task.estimatedPomos) : "",
+  )
   const [reminders, setReminders] = useState<string[]>(
     (task.reminders ?? []).map((r) => toDateTimeLocal(r.triggerAt))
   )
@@ -330,6 +348,8 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       reminders,
       recurrence: recurrence || null,
+      timeEstimateMin: timeEstimateMin ? parseInt(timeEstimateMin, 10) : null,
+      estimatedPomos: estimatedPomos ? parseInt(estimatedPomos, 10) : null,
     })
 
     setLoading(false)
@@ -455,6 +475,68 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
           />
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="edit-timeEstimateMin" className="block text-sm font-medium text-gray-700 mb-2">
+            Time estimate <span className="text-gray-400 font-normal">(min)</span>
+          </label>
+          <input
+            id="edit-timeEstimateMin"
+            type="number"
+            min="1"
+            value={timeEstimateMin}
+            onChange={(e) => setTimeEstimateMin(e.target.value)}
+            placeholder="e.g. 60"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
+          />
+        </div>
+        <div>
+          <label htmlFor="edit-estimatedPomos" className="block text-sm font-medium text-gray-700 mb-2">
+            Est. pomodoros
+          </label>
+          <input
+            id="edit-estimatedPomos"
+            type="number"
+            min="1"
+            value={estimatedPomos}
+            onChange={(e) => setEstimatedPomos(e.target.value)}
+            placeholder="e.g. 3"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
+          />
+        </div>
+      </div>
+
+      {(() => {
+        const actual = task.actualMin ?? 0
+        if (actual <= 0) return null
+        // Compare against the value being TYPED (local state), not the saved one,
+        // so the over/under verdict tracks the field live.
+        const est = parseInt(timeEstimateMin, 10)
+        const estMin = timeEstimateMin && Number.isInteger(est) && est > 0 ? est : null
+        return (
+          <div className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700">
+            <span className="font-medium">Time tracked:</span> {formatMinutes(actual)} actual
+            {estMin != null && (
+              <>
+                {" "}
+                vs {formatMinutes(estMin)} estimated{" "}
+                {actual === estMin ? (
+                  <span className="text-success-700 font-medium">(on target)</span>
+                ) : (
+                  <span
+                    className={
+                      actual > estMin ? "text-warning-700 font-medium" : "text-success-700 font-medium"
+                    }
+                  >
+                    ({actual > estMin ? "over" : "under"} by {formatMinutes(Math.abs(actual - estMin))})
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       <div>
         <label htmlFor="edit-list" className="block text-sm font-medium text-gray-700 mb-2">
