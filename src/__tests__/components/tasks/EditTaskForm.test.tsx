@@ -533,7 +533,9 @@ describe("EditTaskForm Component", () => {
   describe("Form Styling", () => {
     it("should render title input with correct classes", () => {
       const { container } = render(<EditTaskForm task={mockTask} />)
-      const titleInput = container.querySelector("input[type='text']")
+      // Target the title input specifically (the AI instruction box is also a
+      // text input and now precedes it in the form).
+      const titleInput = container.querySelector("#edit-title")
       expect(titleInput).toHaveClass("w-full")
       expect(titleInput).toHaveClass("px-4")
       expect(titleInput).toHaveClass("py-2")
@@ -687,6 +689,187 @@ describe("EditTaskForm Component", () => {
       )
       await userEvent.click(screen.getByLabelText("Delete subtask Sub A"))
       await waitFor(() => expect(deleteTask).toHaveBeenCalledWith("s1"))
+    })
+  })
+
+  describe('"Tell AI what to change" box', () => {
+    const mockFetch = (payload: any, ok = true, status = 200) => {
+      ;(global.fetch as jest.Mock).mockResolvedValue({
+        ok,
+        status,
+        json: async () => payload,
+      })
+    }
+
+    it("renders the AI instruction box", () => {
+      render(<EditTaskForm task={mockTask} />)
+      expect(screen.getByLabelText(/tell ai what to change/i)).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument()
+    })
+
+    it("posts the instruction and pre-fills the returned fields for review", async () => {
+      mockFetch({ changes: { priority: "low", dueDate: "2026-08-01" } })
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.type(
+        screen.getByLabelText(/tell ai what to change/i),
+        "make it low priority due aug 1",
+      )
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+      await waitFor(() =>
+        expect(global.fetch).toHaveBeenCalledWith(
+          "/api/ai/task-edit",
+          expect.objectContaining({ method: "POST" }),
+        ),
+      )
+      // The request carries the task id + instruction.
+      const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)
+      expect(body).toEqual({ taskId: "task-1", instruction: "make it low priority due aug 1" })
+
+      // Fields are pre-filled (not yet saved) and a review note is shown.
+      expect(screen.getByLabelText(/priority/i)).toHaveValue("low")
+      expect(screen.getByLabelText(/due date/i)).toHaveValue("2026-08-01")
+      expect(screen.getByText(/AI updated: Priority, Due date/i)).toBeInTheDocument()
+    })
+
+    it("does NOT save automatically — updateTask only runs on the normal Save", async () => {
+      mockFetch({ changes: { priority: "low" } })
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.type(screen.getByLabelText(/tell ai what to change/i), "low priority")
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+      await waitFor(() => expect(screen.getByLabelText(/priority/i)).toHaveValue("low"))
+      expect(mockUpdateTask).not.toHaveBeenCalled()
+
+      // The pre-filled value is what gets persisted when the user hits Save.
+      mockUpdateTask.mockResolvedValue({ success: true })
+      await userEvent.click(screen.getByRole("button", { name: /save changes/i }))
+      await waitFor(() =>
+        expect(mockUpdateTask).toHaveBeenCalledWith(
+          "task-1",
+          expect.objectContaining({ priority: "low" }),
+        ),
+      )
+    })
+
+    it("surfaces an error and leaves fields unchanged when the AI call fails", async () => {
+      mockFetch({ error: "no", message: "Try rephrasing." }, false, 500)
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.type(screen.getByLabelText(/tell ai what to change/i), "gibberish")
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+      await waitFor(() => expect(screen.getByText("Try rephrasing.")).toBeInTheDocument())
+      // Priority stayed at the task's original value.
+      expect(screen.getByLabelText(/priority/i)).toHaveValue("high")
+      expect(mockUpdateTask).not.toHaveBeenCalled()
+    })
+
+    it("tells the user when the AI found nothing to change", async () => {
+      mockFetch({ changes: {} })
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.type(screen.getByLabelText(/tell ai what to change/i), "hello")
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+      await waitFor(() =>
+        expect(screen.getByText(/didn't find anything to change/i)).toBeInTheDocument(),
+      )
+    })
+
+    it("Enter runs the AI edit — it must NOT submit/close the form", async () => {
+      mockFetch({ changes: { priority: "low" } })
+      render(<EditTaskForm task={mockTask} onClose={mockOnClose} onUpdate={mockOnUpdate} />)
+
+      // Typing an instruction ending in Enter must trigger the AI call, not a form submit.
+      await userEvent.type(
+        screen.getByLabelText(/tell ai what to change/i),
+        "make it low{Enter}",
+      )
+
+      await waitFor(() =>
+        expect(global.fetch).toHaveBeenCalledWith("/api/ai/task-edit", expect.anything()),
+      )
+      expect(mockUpdateTask).not.toHaveBeenCalled()
+      expect(mockOnClose).not.toHaveBeenCalled()
+    })
+
+    it("leaves the task's existing reminders intact through an AI edit + Save", async () => {
+      mockFetch({ changes: { priority: "low" } })
+      const taskWithReminder = {
+        ...mockTask,
+        reminders: [{ id: "r1", triggerAt: new Date(2026, 7, 1, 9, 0) }],
+      }
+      render(<EditTaskForm task={taskWithReminder as any} onClose={mockOnClose} />)
+
+      await userEvent.type(screen.getByLabelText(/tell ai what to change/i), "low priority")
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+      await waitFor(() => expect(screen.getByLabelText(/priority/i)).toHaveValue("low"))
+
+      mockUpdateTask.mockResolvedValue({ success: true })
+      await userEvent.click(screen.getByRole("button", { name: /save changes/i }))
+
+      await waitFor(() =>
+        expect(mockUpdateTask).toHaveBeenCalledWith(
+          "task-1",
+          expect.objectContaining({ priority: "low", reminders: ["2026-08-01T09:00"] }),
+        ),
+      )
+    })
+
+    it("shows removed tags explicitly so a partial AI reply can't silently drop them", async () => {
+      mockFetch({ changes: { tags: ["billing"] } })
+      const taskWithTags = {
+        ...mockTask,
+        tags: [{ name: "work" }, { name: "urgent" }],
+      }
+      render(<EditTaskForm task={taskWithTags as any} />)
+
+      await userEvent.type(screen.getByLabelText(/tell ai what to change/i), "add billing tag")
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+      await waitFor(() =>
+        expect(screen.getByText(/removed: work, urgent/i)).toBeInTheDocument(),
+      )
+      expect(screen.getByLabelText(/tags/i)).toHaveValue("billing")
+    })
+
+    it("shows a Thinking… disabled state while the request is in flight", async () => {
+      let resolveFetch: (v: any) => void = () => {}
+      ;(global.fetch as jest.Mock).mockReturnValue(
+        new Promise((r) => {
+          resolveFetch = r
+        }),
+      )
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.type(screen.getByLabelText(/tell ai what to change/i), "x")
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+      const thinking = screen.getByRole("button", { name: /thinking/i })
+      expect(thinking).toBeDisabled()
+      expect(screen.getByLabelText(/tell ai what to change/i)).toBeDisabled()
+
+      resolveFetch({ ok: true, json: async () => ({ changes: {} }) })
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument(),
+      )
+    })
+
+    it("surfaces a network failure and leaves fields + updateTask untouched", async () => {
+      ;(global.fetch as jest.Mock).mockRejectedValue(new Error("network down"))
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.type(screen.getByLabelText(/tell ai what to change/i), "do it")
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }))
+
+      await waitFor(() =>
+        expect(screen.getByText(/couldn't reach the ai/i)).toBeInTheDocument(),
+      )
+      expect(screen.getByLabelText(/priority/i)).toHaveValue("high")
+      expect(mockUpdateTask).not.toHaveBeenCalled()
     })
   })
 })
