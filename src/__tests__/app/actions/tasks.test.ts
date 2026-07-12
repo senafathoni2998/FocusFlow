@@ -512,6 +512,22 @@ describe("Task Actions", () => {
       })
     })
 
+    it("leaves the existing due date untouched when a non-empty date fails to parse", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.findFirst.mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        dueDate: new Date(2026, 4, 15),
+      } as any)
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      // e.g. the AI renders an out-of-range date ("Feb 31") — must NOT null the date.
+      await updateTask("task-1", { dueDate: "2026-02-31" })
+
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data).not.toHaveProperty("dueDate")
+    })
+
     it("should verify task ownership before update", async () => {
       mockAuth.mockResolvedValue(mockSession)
       mockPrisma.task.findFirst.mockResolvedValue(null)
