@@ -562,5 +562,22 @@ describe("CreateTaskForm Component", () => {
 
       expect(mockCreateTask).toHaveBeenCalledWith(expect.objectContaining({ goalId: "g1" }))
     })
+
+    it("submits the time estimate and estimated pomodoros", async () => {
+      const user = userEvent.setup()
+      mockCreateTask.mockResolvedValue({ success: true })
+      render(<CreateTaskForm onClose={mockOnClose} />)
+
+      await user.type(screen.getByLabelText(/title \*/i), "Write report")
+      await user.type(screen.getByLabelText(/time estimate/i), "90")
+      await user.type(screen.getByLabelText(/est\. pomodoros/i), "4")
+      await user.click(screen.getByRole("button", { name: "Create Task" }))
+
+      await waitFor(() =>
+        expect(mockCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({ timeEstimateMin: 90, estimatedPomos: 4 }),
+        ),
+      )
+    })
   })
 })
