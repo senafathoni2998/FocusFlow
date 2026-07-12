@@ -120,6 +120,8 @@ jest.mock("@/lib/auth", () => ({
 
 // Import route after mocks are set up
 import { POST } from "@/app/api/chat/route"
+// Source of truth for the task enums — the tool schema must stay in sync with it.
+import { TASK_STATUSES, TASK_PRIORITIES } from "@/lib/taskConstants"
 
 // Helper to create a mock request
 const createRequest = async (body: any): Promise<any> => {
@@ -1314,6 +1316,133 @@ describe("Chat API Route", () => {
       const toolMsgs = followUp.filter((m: any) => m.role === "tool")
       expect(toolMsgs).toHaveLength(1)
       expect(toolMsgs[0].tool_call_id).toBe("call_1")
+    })
+  })
+
+  // Locks the fix for editing tasks via the AI: the updateTask tool must expose
+  // the full status/priority value sets, and the system prompt must steer the
+  // model toward partial updates that never clobber the (unshown) description.
+  describe("Edit-task tool schema + prompt", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([])
+      mockChatCreate.mockResolvedValue({ choices: [{ message: { content: "ok" } }] })
+    })
+
+    const sentTools = () => mockChatCreate.mock.calls[0][0].tools
+    const toolNamed = (name: string) =>
+      sentTools().find((t: any) => t.function?.name === name)?.function
+    const systemContent = () => {
+      const messages = mockChatCreate.mock.calls[0][0].messages
+      return messages.find((m: any) => m.role === "system").content as string
+    }
+
+    it("keeps updateTask's status enum in sync with TASK_STATUSES (incl. wont-do)", async () => {
+      await POST(await createRequest({ message: "hi" }))
+      // Tie to the source of truth so a future status added to taskConstants
+      // can't silently drift the tool schema out of parity.
+      expect(toolNamed("updateTask").parameters.properties.status.enum).toEqual([
+        ...TASK_STATUSES,
+      ])
+    })
+
+    it("keeps create/update priority enums in sync with TASK_PRIORITIES (incl. none)", async () => {
+      await POST(await createRequest({ message: "hi" }))
+      expect(toolNamed("createTask").parameters.properties.priority.enum).toEqual([
+        ...TASK_PRIORITIES,
+      ])
+      expect(toolNamed("updateTask").parameters.properties.priority.enum).toEqual([
+        ...TASK_PRIORITIES,
+      ])
+    })
+
+    it("does not force description on an edit (updateTask requires only id)", async () => {
+      await POST(await createRequest({ message: "hi" }))
+      // If a field like description/status were ever added to `required`, every
+      // edit would be forced to carry it and reintroduce the clobber by construction.
+      expect(toolNamed("updateTask").parameters.required).toEqual(["id"])
+      expect(toolNamed("createTask").parameters.required).toEqual(["title"])
+    })
+
+    it("marks updateTask as a partial update and warns against clobbering the description", async () => {
+      await POST(await createRequest({ message: "hi" }))
+      const update = toolNamed("updateTask")
+      expect(update.description).toMatch(/partial update/i)
+      // The description param must warn that sending it replaces/erases existing notes.
+      expect(update.parameters.properties.description.description).toMatch(
+        /ERASES|REPLACES/,
+      )
+    })
+
+    it("system prompt instructs partial edits and forbids description clobbering", async () => {
+      await POST(await createRequest({ message: "hi" }))
+      const sys = systemContent()
+      expect(sys).toMatch(/PARTIAL update/i)
+      expect(sys).toMatch(/NEVER include "description" on an update/i)
+      // Falls back to listTasks instead of creating a duplicate when unresolved.
+      expect(sys).toMatch(/call listTasks/i)
+      expect(sys).toMatch(/NEVER create a new task as a substitute/i)
+    })
+  })
+
+  // End-to-end marshaling: proves the edit path (not just the wording) protects
+  // the description and honors the documented clear/wont-do semantics. These pin
+  // behavior at the route boundary where the original clobber occurred.
+  describe("Edit-task marshaling (partial update)", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([
+        { id: "task-123", title: "Existing Task", status: "todo", priority: "medium" },
+      ])
+      mockUpdateTask.mockResolvedValue({ success: true, task: { id: "task-123" } })
+    })
+
+    it("drops an empty-string description so an edit can't blank the user's notes", async () => {
+      mockFunctionCall("updateTask", { id: "task-123", status: "completed", description: "" })
+
+      await POST(await createRequest({ message: "mark Existing Task done" }))
+
+      expect(mockUpdateTask).toHaveBeenCalledTimes(1)
+      const args = mockUpdateTask.mock.calls[0][1]
+      expect(args).not.toHaveProperty("description")
+      expect(args.status).toBe("completed")
+    })
+
+    it("drops a whitespace-only description too", async () => {
+      mockFunctionCall("updateTask", { id: "task-123", dueDate: "2026-02-08", description: "   " })
+
+      await POST(await createRequest({ message: "set the due date" }))
+
+      expect(mockUpdateTask.mock.calls[0][1]).not.toHaveProperty("description")
+    })
+
+    it("keeps a real description the user actually provided", async () => {
+      mockFunctionCall("updateTask", { id: "task-123", description: "- a\n- b" })
+
+      await POST(await createRequest({ message: "set the notes to a list" }))
+
+      expect(mockUpdateTask.mock.calls[0][1].description).toBe("- a\n- b")
+    })
+
+    it("passes an empty-string dueDate through as an explicit clear (no description leaked in)", async () => {
+      mockFunctionCall("updateTask", { id: "task-123", dueDate: "" })
+
+      await POST(await createRequest({ message: "remove the due date on Existing Task" }))
+
+      const args = mockUpdateTask.mock.calls[0][1]
+      expect(args.dueDate).toBe("")
+      expect(args).not.toHaveProperty("description")
+    })
+
+    it("marshals a wont-do status edit through to updateTask", async () => {
+      mockFunctionCall("updateTask", { id: "task-123", status: "wont-do" })
+
+      await POST(await createRequest({ message: "skip Existing Task" }))
+
+      expect(mockUpdateTask).toHaveBeenCalledWith("task-123", {
+        id: "task-123",
+        status: "wont-do",
+      })
     })
   })
 })
