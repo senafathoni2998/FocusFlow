@@ -5,6 +5,7 @@ import StatsCards from "@/components/dashboard/StatsCards"
 import Charts from "@/components/dashboard/Charts"
 import AIInsights from "@/components/dashboard/AIInsights"
 import WeeklyReview from "@/components/dashboard/WeeklyReview"
+import FocusStreak from "@/components/dashboard/FocusStreak"
 import GoalsWidget from "@/components/dashboard/GoalsWidget"
 import HabitsWidget from "@/components/dashboard/HabitsWidget"
 import { getGoals } from "@/app/actions/goals"
@@ -47,7 +48,8 @@ export default async function DashboardPage() {
     dailyData: [],
     taskStats: { total: 0, todo: 0, inProgress: 0, completed: 0, highPriority: 0, mediumPriority: 0, lowPriority: 0 },
     sessionStats: { total: 0, completed: 0, cancelled: 0, totalMinutes: 0 },
-    peakHours: []
+    peakHours: [],
+    focusSessionStarts: []
   }
 
   const data = analytics || defaultData
@@ -65,6 +67,10 @@ export default async function DashboardPage() {
         </div>
 
         <StatsCards taskStats={data.taskStats} sessionStats={data.sessionStats} />
+
+        <div className="mt-6">
+          <FocusStreak starts={data.focusSessionStarts} />
+        </div>
 
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
