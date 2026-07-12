@@ -872,4 +872,160 @@ describe("EditTaskForm Component", () => {
       expect(mockUpdateTask).not.toHaveBeenCalled()
     })
   })
+
+  describe("AI subtask suggestions", () => {
+    const mockCreateTask = require("@/app/actions/tasks").createTask as jest.Mock
+
+    const mockFetch = (data: any, ok = true) => {
+      ;(global.fetch as jest.Mock).mockResolvedValue({ ok, json: async () => data })
+    }
+
+    it("renders a Suggest button in the subtasks section", () => {
+      render(<EditTaskForm task={mockTask} />)
+      expect(screen.getByRole("button", { name: /suggest/i })).toBeInTheDocument()
+    })
+
+    it("fetches suggestions and shows them as a checklist (all checked)", async () => {
+      mockFetch({ subtasks: ["Draft outline", "Write intro", "Publish"] })
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+
+      await waitFor(() =>
+        expect(global.fetch).toHaveBeenCalledWith(
+          "/api/ai/subtasks",
+          expect.objectContaining({ method: "POST" }),
+        ),
+      )
+      const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body)
+      expect(body).toEqual({ taskId: "task-1" })
+
+      expect(screen.getByLabelText("Include subtask Draft outline")).toBeChecked()
+      expect(screen.getByRole("button", { name: /add 3 selected/i })).toBeInTheDocument()
+    })
+
+    it("creates only the checked suggestions as subtasks, then clears them", async () => {
+      const onUpdate = jest.fn()
+      mockFetch({ subtasks: ["Draft outline", "Write intro", "Publish"] })
+      render(<EditTaskForm task={mockTask} onUpdate={onUpdate} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      await screen.findByLabelText("Include subtask Write intro")
+
+      // Uncheck the middle one.
+      await userEvent.click(screen.getByLabelText("Include subtask Write intro"))
+      expect(screen.getByRole("button", { name: /add 2 selected/i })).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole("button", { name: /add 2 selected/i }))
+
+      await waitFor(() => expect(mockCreateTask).toHaveBeenCalledTimes(2))
+      expect(mockCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Draft outline", parentTaskId: "task-1" }),
+      )
+      expect(mockCreateTask).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Publish", parentTaskId: "task-1" }),
+      )
+      expect(mockCreateTask).not.toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Write intro" }),
+      )
+      // The suggestion panel is cleared and the parent refreshes.
+      await waitFor(() =>
+        expect(screen.queryByText("Draft outline")).not.toBeInTheDocument(),
+      )
+      expect(onUpdate).toHaveBeenCalled()
+    })
+
+    it("shows a message when the AI returns no subtasks", async () => {
+      mockFetch({ subtasks: [] })
+      render(<EditTaskForm task={mockTask} />)
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      expect(await screen.findByText(/didn't come up with any subtasks/i)).toBeInTheDocument()
+    })
+
+    it("surfaces an error and creates nothing when the request fails", async () => {
+      mockFetch({ error: "AI service not configured", message: "No AI provider is configured." }, false)
+      render(<EditTaskForm task={mockTask} />)
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      expect(await screen.findByText("No AI provider is configured.")).toBeInTheDocument()
+      expect(mockCreateTask).not.toHaveBeenCalled()
+    })
+
+    it("surfaces createTask's {error} return and does NOT clear the checklist", async () => {
+      const onUpdate = jest.fn()
+      mockFetch({ subtasks: ["A", "B"] })
+      // createTask returns an error object (it does not throw).
+      mockCreateTask.mockResolvedValue({ error: "List not found" })
+      render(<EditTaskForm task={mockTask} onUpdate={onUpdate} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      await screen.findByLabelText("Include subtask A")
+      await userEvent.click(screen.getByRole("button", { name: /add 2 selected/i }))
+
+      expect(await screen.findByText(/list not found/i)).toBeInTheDocument()
+      // Nothing succeeded → the checklist stays and the parent is not refreshed.
+      expect(screen.getByLabelText("Include subtask A")).toBeInTheDocument()
+      expect(onUpdate).not.toHaveBeenCalled()
+    })
+
+    it("on a mid-loop failure keeps only the uncreated items (no re-create on retry)", async () => {
+      const onUpdate = jest.fn()
+      mockFetch({ subtasks: ["A", "B", "C"] })
+      mockCreateTask
+        .mockResolvedValueOnce({ success: true }) // A created
+        .mockRejectedValueOnce(new Error("boom")) // B fails
+      render(<EditTaskForm task={mockTask} onUpdate={onUpdate} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      await screen.findByLabelText("Include subtask A")
+      await userEvent.click(screen.getByRole("button", { name: /add 3 selected/i }))
+
+      // The created one is dropped from the list; the rest remain for retry.
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Include subtask A")).not.toBeInTheDocument(),
+      )
+      expect(screen.getByLabelText("Include subtask B")).toBeInTheDocument()
+      expect(screen.getByText(/Added 1, but couldn't add the rest/i)).toBeInTheDocument()
+      // Committed row is surfaced via a refresh.
+      expect(onUpdate).toHaveBeenCalled()
+    })
+
+    it("Dismiss clears the checklist without creating anything", async () => {
+      mockFetch({ subtasks: ["A", "B"] })
+      render(<EditTaskForm task={mockTask} />)
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      await screen.findByLabelText("Include subtask A")
+
+      await userEvent.click(screen.getByRole("button", { name: /dismiss/i }))
+      expect(screen.queryByLabelText("Include subtask A")).not.toBeInTheDocument()
+      expect(mockCreateTask).not.toHaveBeenCalled()
+    })
+
+    it("disables 'Add' when every suggestion is unchecked", async () => {
+      mockFetch({ subtasks: ["A", "B"] })
+      render(<EditTaskForm task={mockTask} />)
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      await screen.findByLabelText("Include subtask A")
+
+      await userEvent.click(screen.getByLabelText("Include subtask A"))
+      await userEvent.click(screen.getByLabelText("Include subtask B"))
+      expect(screen.getByRole("button", { name: /add 0 selected/i })).toBeDisabled()
+    })
+
+    it("shows an 'Adding…' busy state while creating", async () => {
+      mockFetch({ subtasks: ["A"] })
+      let resolveCreate: (v: any) => void = () => {}
+      mockCreateTask.mockReturnValue(new Promise((r) => { resolveCreate = r }))
+      render(<EditTaskForm task={mockTask} />)
+
+      await userEvent.click(screen.getByRole("button", { name: /suggest/i }))
+      await screen.findByLabelText("Include subtask A")
+      await userEvent.click(screen.getByRole("button", { name: /add 1 selected/i }))
+
+      expect(screen.getByRole("button", { name: /adding/i })).toBeDisabled()
+      resolveCreate({ success: true })
+      await waitFor(() =>
+        expect(screen.queryByLabelText("Include subtask A")).not.toBeInTheDocument(),
+      )
+    })
+  })
 })
