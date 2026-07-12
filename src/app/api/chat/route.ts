@@ -59,6 +59,12 @@ const functions = [
           type: "string",
           description: "Due date in ISO 8601 format (e.g., 2024-12-31)",
         },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional tags/labels for the task (without the leading '#'). Parse any #tag the user typed into this list, e.g. 'Pay rent #home #bills' -> [\"home\", \"bills\"].",
+        },
       },
       required: ["title"],
     },
@@ -415,6 +421,7 @@ CRITICAL - Identifying Goals & Habits (same as tasks: reference by title/name, a
 
 Guidelines:
 - Keep responses concise and helpful
+- When creating a task, parse any "#tag" tokens in the user's text into the createTask tags parameter (without the '#'), and map an explicit priority to the priority parameter.
 - When creating tasks, confirm what was created
 - When updating tasks, mention what changed
 - When listing tasks, format them clearly with status and priority
