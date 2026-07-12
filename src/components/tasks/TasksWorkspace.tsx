@@ -25,6 +25,7 @@ import TaskMatrixView from "./TaskMatrixView"
 import SmartListSidebar from "./SmartListSidebar"
 import FilterBar, { type ViewMode } from "./FilterBar"
 import CreateTaskForm from "./CreateTaskForm"
+import QuickAddBar from "./QuickAddBar"
 
 const SORT_KEYS: SortKey[] = ["manual", "due", "priority", "title"]
 
@@ -342,6 +343,8 @@ export default function TasksWorkspace({
           + New Task
         </button>
       </div>
+
+      <QuickAddBar onCreated={handleUpdate} listId={filters.listId} />
 
       <div className="flex flex-col lg:flex-row gap-6">
         <SmartListSidebar
