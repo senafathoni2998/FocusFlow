@@ -310,10 +310,23 @@ export async function updateTask(
     }
 
     if (data.dueDate !== undefined) {
-      updateData.dueDate = parseDateInput(data.dueDate)
+      // An empty string is an explicit "clear". A non-empty value that fails to
+      // parse (e.g. an out-of-range or non-ISO date the AI rendered) must NOT
+      // silently wipe the existing date — leave it untouched in that case.
+      if (data.dueDate === "") {
+        updateData.dueDate = null
+      } else {
+        const parsed = parseDateInput(data.dueDate)
+        if (parsed) updateData.dueDate = parsed
+      }
     }
     if (data.startDate !== undefined) {
-      updateData.startDate = parseDateInput(data.startDate)
+      if (data.startDate === "") {
+        updateData.startDate = null
+      } else {
+        const parsed = parseDateInput(data.startDate)
+        if (parsed) updateData.startDate = parsed
+      }
     }
     if (data.isAllDay !== undefined) updateData.isAllDay = data.isAllDay
     if (data.timeEstimateMin !== undefined) {
