@@ -27,6 +27,8 @@ export interface Task {
   completedAt?: Date | null
   timeEstimateMin?: number | null
   estimatedPomos?: number | null
+  /** Derived: summed wall-clock minutes of this task's completed pomodoros. */
+  actualMin?: number
   priorityRank?: number
   parentTaskId?: string | null
   listId?: string | null
