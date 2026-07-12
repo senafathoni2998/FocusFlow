@@ -403,6 +403,34 @@ describe("Chat API Route", () => {
       expect(data.message).toBe("I've created the task 'New Task' for you.")
     })
 
+    it("should marshal a createTask tags array through to the action", async () => {
+      const newTask = { id: "task-9", title: "Pay rent" }
+      mockChatCreate
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{ id: "call_1", type: "function", function: {
+                name: "createTask",
+                arguments: JSON.stringify({ title: "Pay rent", tags: ["home", "bills"] }),
+              } }],
+            },
+          }],
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: "Created 'Pay rent'." } }],
+        })
+      mockCreateTask.mockResolvedValue({ task: newTask })
+
+      const response = await POST(await createRequest({ message: "add Pay rent #home #bills" }))
+      await response.json()
+
+      expect(mockCreateTask).toHaveBeenCalledWith({
+        title: "Pay rent",
+        tags: ["home", "bills"],
+      })
+    })
+
     it("should handle createTask errors gracefully", async () => {
       mockChatCreate
         .mockResolvedValueOnce({
@@ -1362,6 +1390,13 @@ describe("Chat API Route", () => {
       // edit would be forced to carry it and reintroduce the clobber by construction.
       expect(toolNamed("updateTask").parameters.required).toEqual(["id"])
       expect(toolNamed("createTask").parameters.required).toEqual(["title"])
+    })
+
+    it("exposes a tags array on createTask so the assistant can parse #tags", async () => {
+      await POST(await createRequest({ message: "hi" }))
+      const tags = toolNamed("createTask").parameters.properties.tags
+      expect(tags?.type).toBe("array")
+      expect(tags?.items?.type).toBe("string")
     })
 
     it("marks updateTask as a partial update and warns against clobbering the description", async () => {
