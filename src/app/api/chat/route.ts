@@ -51,8 +51,9 @@ const functions = [
         },
         priority: {
           type: "string",
-          enum: ["low", "medium", "high"],
-          description: "Priority level of the task",
+          enum: ["none", "low", "medium", "high"],
+          description:
+            "Priority level of the task (defaults to medium if omitted; 'none' means no priority)",
         },
         dueDate: {
           type: "string",
@@ -64,7 +65,8 @@ const functions = [
   },
   {
     name: "updateTask",
-    description: "Update an existing task's properties",
+    description:
+      "Update an existing task. This is a PARTIAL update: pass the task's id plus ONLY the field(s) the user explicitly asked to change. Every field you omit is left exactly as it is — do NOT re-send unchanged fields.",
     parameters: {
       type: "object",
       properties: {
@@ -74,25 +76,29 @@ const functions = [
         },
         title: {
           type: "string",
-          description: "New title for the task",
+          description:
+            "New title for the task. Only include this when the user is renaming the task.",
         },
         description: {
           type: "string",
-          description: "New description for the task. IMPORTANT: Preserve all markdown formatting including bullet points (-), lists, headers (#), etc.",
+          description:
+            "New description text. Include this ONLY when the user explicitly provides new description content. You are NOT shown the task's current description, and this field REPLACES the whole description, so sending a guessed, summarized, or empty value here ERASES the user's existing notes. When you do set it, preserve the user's exact markdown: bullet points (-), lists, headers (#), etc.",
         },
         status: {
           type: "string",
-          enum: ["todo", "in-progress", "completed"],
-          description: "New status for the task",
+          enum: ["todo", "in-progress", "completed", "wont-do"],
+          description:
+            "New status for the task. 'wont-do' means abandoned/skipped (still counts as closed/done).",
         },
         priority: {
           type: "string",
-          enum: ["low", "medium", "high"],
-          description: "New priority level for the task",
+          enum: ["none", "low", "medium", "high"],
+          description: "New priority level for the task ('none' clears the priority)",
         },
         dueDate: {
           type: "string",
-          description: "New due date in ISO 8601 format",
+          description:
+            "New due date in ISO 8601 format (YYYY-MM-DD). Pass an empty string to remove the due date.",
         },
       },
       required: ["id"],
@@ -345,7 +351,7 @@ function formatReminderTime(d: Date): string {
 }
 
 const systemPrompt = `You are a helpful productivity assistant for FocusFlow. FocusFlow tracks four pillars: TASKS, GOALS, HABITS, and REMINDERS. You can help users:
-- Tasks: create, update (status, priority, title, description, due date), delete, and list tasks
+- Tasks: create, update (status incl. "won't do", priority incl. "none", title, description, due date), delete, and list tasks
 - Goals: create goals, edit their details, nudge their progress, mark them achieved/archived/active, delete, and list goals
 - Habits: create daily habits, check in (log) a habit for a day, delete, and list habits with their streaks
 - Reminders: list reminders that are currently due (reminders are attached to tasks and can only be set on a task in the app — you cannot create them here)
@@ -359,27 +365,35 @@ CRITICAL - Task Identification for Updates/Deletes:
 - NEVER use createTask when the user wants to modify an existing task
 - Look at the task list below and find the task whose TITLE matches what the user said
 - Once you find the correct task by title, use its FULL ID for the updateTask function
-- The ID format shown is: [Title] (ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+- Each task is listed below as: "Title" (ID: <id>, Status: ..., Priority: ...[, Due: ...]) — use the value right after "ID:" up to the comma.
+- If the task the user named is NOT in the list below (they may have more tasks than are shown here), call listTasks to load the full list, find the match, then updateTask with its ID. NEVER create a new task as a substitute for an edit you could not resolve — if it is still not found, ask the user which task they mean.
 
 KEYWORDS THAT MEAN UPDATE (NOT CREATE):
 - "change task X", "update task X", "modify task X"
 - "for task X, add/change/set..."
-- "set task X due to...", "change task X priority to..."
-- "mark task X as completed/in-progress"
+- "set task X due to...", "change task X priority to...", "clear task X due date", "remove priority from task X"
+- "mark task X as completed/in-progress", "mark task X as won't do", "skip task X"
 
 KEYWORDS THAT MEAN CREATE:
 - "create a new task", "add a task", "make a task"
 - "I need to...", "Remind me to..." (when no existing task is mentioned)
 
-Examples:
-- "change task Create new DI for OMI EPN due to 6 februari 2026" → UPDATE existing task, NOT create
-- "for task Prepare for create new DI, add due to 8 februari 2026" → UPDATE existing task, NOT create
-- "update task Buy groceries to high priority" → UPDATE existing task, NOT create
-- "create a task called Buy milk" → CREATE new task (this one doesn't exist yet)
+Examples (on an update, send ONLY the field being changed, plus id):
+- "change task Create new DI for OMI EPN due to 6 februari 2026" → updateTask { id, dueDate: "2026-02-06" } (UPDATE, NOT create)
+- "for task Prepare for create new DI, add due to 8 februari 2026" → updateTask { id, dueDate: "2026-02-08" } (UPDATE, NOT create)
+- "update task Buy groceries to high priority" → updateTask { id, priority: "high" } (UPDATE, NOT create)
+- "mark task Buy groceries as won't do" → updateTask { id, status: "wont-do" }
+- "create a task called Buy milk" → createTask { title: "Buy milk" } (CREATE — this one doesn't exist yet)
+
+CRITICAL - An edit changes ONLY the field the user named:
+- updateTask is a PARTIAL update. Pass the task id plus ONLY the field(s) the user explicitly asked to change; every field you omit keeps its current value. Do NOT re-send unchanged fields "to be safe" — that overwrites them.
+- NEVER include "description" on an update unless the user is explicitly giving you NEW description text. You are not shown the task's current description, so sending anything there (a guess, a summary, or an empty string) DELETES the notes the user already has. A due-date / priority / status / title change must NOT touch the description.
+- To clear a due date, pass dueDate as an empty string "". To remove a priority, set priority "none". To abandon/skip a task, set status "wont-do".
+- You can only set a task's title, description, status, priority, and due date here. If the user asks to change a task's tags, list/project, linked goal, repeat/recurrence, subtasks, or reminders, tell them those are managed on the task in the app — do NOT attempt it with updateTask and do NOT create a new task for it.
 
 CRITICAL - Preserve Markdown Formatting in Descriptions:
-- When users provide a description with lists (using -, *, or bullets), headers, or any markdown formatting
-- You MUST preserve the exact markdown format in the description parameter
+- This applies ONLY when the user actually GIVES you description text — when creating a task, or when they explicitly ask to change the description. It is NOT a reason to attach a description to an edit that is not about the description (see the rule above).
+- In that case you MUST preserve the exact markdown format in the description parameter
 - Do NOT convert lists to plain text - keep the "-" bullet points
 - Do NOT add any additional formatting or explanations within the description
 - Copy the description EXACTLY as the user provides it
@@ -590,6 +604,19 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
           break;
 
         case "updateTask":
+          // Backstop the prompt's "don't blank the description" rule: the task
+          // context sent to the model omits descriptions and there is no
+          // "clear the description" intent, so an empty/whitespace description on
+          // an edit is never intended — drop it rather than let it overwrite the
+          // user's existing notes. (The in-app edit form clears descriptions via
+          // updateTask directly, so this guard lives on the AI path only, not in
+          // the shared action.)
+          if (
+            typeof functionArgs.description === "string" &&
+            functionArgs.description.trim() === ""
+          ) {
+            delete functionArgs.description;
+          }
           result = await updateTask(
             functionArgs.id as string,
             functionArgs as any,
