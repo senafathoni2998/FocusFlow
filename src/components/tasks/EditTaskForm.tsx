@@ -98,6 +98,98 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
   const [subtaskBusy, setSubtaskBusy] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
+  // "Tell AI what to change" box: sends a natural-language instruction to the
+  // AI, which returns a field-change delta. We only pre-fill the form with it —
+  // the user reviews and hits Save (the normal updateTask path) to persist.
+  const [aiInstruction, setAiInstruction] = useState("")
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState("")
+  const [aiChanged, setAiChanged] = useState<string[]>([])
+
+  const applyAiEdit = async () => {
+    const text = aiInstruction.trim()
+    if (!text || aiLoading) return
+    setAiLoading(true)
+    setAiError("")
+    setAiChanged([])
+    try {
+      const res = await fetch("/api/ai/task-edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: task.id, instruction: text }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setAiError(
+          data.message || data.error || "AI couldn't apply that. Try rephrasing."
+        )
+        return
+      }
+
+      // Apply only the fields the endpoint returned (a partial delta), tracking
+      // which ones changed so we can show the user what to review before saving.
+      const changes = data.changes ?? {}
+      const changed: string[] = []
+      if (typeof changes.title === "string") {
+        setTitle(changes.title)
+        changed.push("Title")
+      }
+      if (typeof changes.description === "string") {
+        setDescription(changes.description)
+        changed.push("Description")
+      }
+      if (typeof changes.priority === "string") {
+        setPriority(changes.priority)
+        changed.push("Priority")
+      }
+      if (typeof changes.dueDate === "string") {
+        setDueDate(changes.dueDate)
+        changed.push("Due date")
+      }
+      if (changes.listId !== undefined) {
+        setListId(changes.listId ?? "")
+        changed.push("List")
+      }
+      if (changes.goalId !== undefined) {
+        setGoalId(changes.goalId ?? "")
+        changed.push("Goal")
+      }
+      if (Array.isArray(changes.tags)) {
+        // The AI returns the FULL resulting tag set, so a partial reply could drop
+        // existing tags. Make any removal explicit in the review note (the field
+        // shows the new set, but removals are easy to miss) so it can't be a silent
+        // loss when the user hits Save.
+        const currentTags = tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+        const nextTags: string[] = changes.tags
+        const removed = currentTags.filter(
+          (t) => !nextTags.some((n) => n.toLowerCase() === t.toLowerCase()),
+        )
+        setTags(nextTags.join(", "))
+        let label = nextTags.length ? `Tags (${nextTags.join(", ")})` : "Tags (cleared)"
+        if (removed.length) label += ` [removed: ${removed.join(", ")}]`
+        changed.push(label)
+      }
+      if (changes.recurrence !== undefined) {
+        setRecurrence(changes.recurrence ?? "")
+        changed.push("Repeat")
+      }
+
+      if (changed.length === 0) {
+        setAiError("AI didn't find anything to change. Try being more specific.")
+      } else {
+        setAiChanged(changed)
+        setAiInstruction("")
+      }
+    } catch {
+      setAiError("Couldn't reach the AI. Check your connection and try again.")
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   useEffect(() => {
     getLists().then(setLists)
     getGoalOptions().then(setGoals)
@@ -173,6 +265,49 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
           {error}
         </div>
       )}
+
+      <div className="rounded-lg border border-primary-200 bg-primary-50/60 p-3">
+        <label htmlFor="edit-ai" className="block text-sm font-medium text-primary-800 mb-2">
+          ✨ Tell AI what to change
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="edit-ai"
+            type="text"
+            value={aiInstruction}
+            onChange={(e) => setAiInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              // Keep Enter here from submitting the whole form — run the AI edit instead.
+              if (e.key === "Enter") {
+                e.preventDefault()
+                applyAiEdit()
+              }
+            }}
+            disabled={aiLoading}
+            aria-busy={aiLoading}
+            placeholder="e.g. push to next Friday and mark high priority"
+            className="flex-1 px-3 py-2 text-sm border border-primary-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400 disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={applyAiEdit}
+            disabled={aiLoading || !aiInstruction.trim()}
+            className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
+          >
+            {aiLoading ? "Thinking…" : "Apply"}
+          </button>
+        </div>
+        {aiError && (
+          <p role="alert" className="mt-2 text-sm text-danger-600">
+            {aiError}
+          </p>
+        )}
+        {aiChanged.length > 0 && (
+          <p role="status" className="mt-2 text-sm text-primary-700">
+            AI updated: {aiChanged.join(", ")} — review and Save.
+          </p>
+        )}
+      </div>
 
       <div>
         <label htmlFor="edit-title" className="block text-sm font-medium text-gray-700 mb-2">
