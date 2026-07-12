@@ -197,6 +197,25 @@ describe("Analytics API Route", () => {
       expect(mockPrisma.focusSession.findMany).toHaveBeenCalled()
     })
 
+    it("returns completed-pomodoro start times for the focus streak", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      const start = new Date("2026-07-10T10:00:00Z")
+      mockPrisma.focusSession.findMany.mockResolvedValue([
+        { startTime: start, endTime: new Date("2026-07-10T10:25:00Z"), status: "completed" },
+      ])
+      mockPrisma.task.findMany.mockResolvedValue([])
+
+      const response = await GET(new Request("http://localhost:3000/api/analytics"))
+      const data = await response.json()
+
+      expect(data.focusSessionStarts).toEqual([start.toISOString()])
+      // The streak query is scoped to completed pomodoros over a long window.
+      const streakCall = mockPrisma.focusSession.findMany.mock.calls.find(
+        (c) => c[0]?.where?.status === "completed" && c[0]?.where?.type === "pomodoro",
+      )
+      expect(streakCall).toBeDefined()
+    })
+
     it("should handle days=7 parameter", async () => {
       mockAuth.mockResolvedValue(mockSession)
       mockPrisma.focusSession.findMany.mockResolvedValue([])
