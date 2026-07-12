@@ -278,6 +278,8 @@ describe("EditTaskForm Component", () => {
           tags: [],
           reminders: [],
           recurrence: null,
+          timeEstimateMin: null,
+          estimatedPomos: null,
         })
       })
       // Let the async handler finish (onUpdate -> onClose) so its trailing calls
@@ -354,6 +356,8 @@ describe("EditTaskForm Component", () => {
           tags: [],
           reminders: [],
           recurrence: null,
+          timeEstimateMin: null,
+          estimatedPomos: null,
         })
       })
       await waitFor(() => expect(mockOnClose).toHaveBeenCalled())
@@ -1025,6 +1029,67 @@ describe("EditTaskForm Component", () => {
       resolveCreate({ success: true })
       await waitFor(() =>
         expect(screen.queryByLabelText("Include subtask A")).not.toBeInTheDocument(),
+      )
+    })
+  })
+
+  describe("Time estimate + tracked time", () => {
+    it("shows the estimate-vs-actual readout when time is tracked", () => {
+      render(<EditTaskForm task={{ ...mockTask, timeEstimateMin: 60, actualMin: 75 }} />)
+      expect(screen.getByText(/Time tracked:/i)).toBeInTheDocument()
+      expect(screen.getByText(/over by/i)).toBeInTheDocument()
+    })
+
+    it("hides the readout when no time is tracked", () => {
+      render(<EditTaskForm task={mockTask} />)
+      expect(screen.queryByText(/Time tracked:/i)).not.toBeInTheDocument()
+    })
+
+    it("submits the parsed time estimate on save", async () => {
+      const user = userEvent.setup()
+      mockUpdateTask.mockResolvedValue({ success: true })
+      render(<EditTaskForm task={mockTask} />)
+
+      await user.type(screen.getByLabelText(/time estimate/i), "45")
+      await user.click(screen.getByRole("button", { name: "Save Changes" }))
+
+      await waitFor(() =>
+        expect(mockUpdateTask).toHaveBeenCalledWith(
+          "task-1",
+          expect.objectContaining({ timeEstimateMin: 45 }),
+        ),
+      )
+    })
+
+    it("shows 'on target' when actual equals the estimate", () => {
+      render(<EditTaskForm task={{ ...mockTask, timeEstimateMin: 60, actualMin: 60 }} />)
+      expect(screen.getByText(/on target/i)).toBeInTheDocument()
+    })
+
+    it("updates the over/under verdict live as the estimate is edited", async () => {
+      const user = userEvent.setup()
+      render(<EditTaskForm task={{ ...mockTask, timeEstimateMin: 30, actualMin: 60 }} />)
+      expect(screen.getByText(/over by/i)).toBeInTheDocument()
+
+      const est = screen.getByLabelText(/time estimate/i)
+      await user.clear(est)
+      await user.type(est, "90")
+      expect(screen.getByText(/under by/i)).toBeInTheDocument()
+    })
+
+    it("sends null to clear a previously-set estimate on save", async () => {
+      const user = userEvent.setup()
+      mockUpdateTask.mockResolvedValue({ success: true })
+      render(<EditTaskForm task={{ ...mockTask, timeEstimateMin: 60 }} />)
+
+      await user.clear(screen.getByLabelText(/time estimate/i))
+      await user.click(screen.getByRole("button", { name: "Save Changes" }))
+
+      await waitFor(() =>
+        expect(mockUpdateTask).toHaveBeenCalledWith(
+          "task-1",
+          expect.objectContaining({ timeEstimateMin: null }),
+        ),
       )
     })
   })
