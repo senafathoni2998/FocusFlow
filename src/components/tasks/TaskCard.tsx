@@ -166,6 +166,19 @@ export default function TaskCard({ task, subtasks, onUpdate }: TaskCardProps) {
               🔁 {RECURRENCE_LABELS[task.recurrence.freq as RecurrenceFreq] ?? "Repeats"}
             </span>
           )}
+          {(task.timeEstimateMin != null || (task.actualMin ?? 0) > 0) && (
+            <span
+              className={`text-xs px-2 py-1 rounded-full tabular-nums ${
+                task.timeEstimateMin != null && (task.actualMin ?? 0) > task.timeEstimateMin
+                  ? "bg-warning-100 text-warning-800"
+                  : "bg-success-100 text-success-800"
+              }`}
+              title="Time tracked vs estimate"
+            >
+              ⏱ {task.actualMin ?? 0}m
+              {task.timeEstimateMin != null ? `/${task.timeEstimateMin}m` : ""}
+            </span>
+          )}
           {task.reminders && task.reminders.length > 0 && (
             <span
               className="text-xs px-2 py-1 rounded-full bg-warning-50 text-warning-700"
