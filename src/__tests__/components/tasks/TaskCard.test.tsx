@@ -591,4 +591,27 @@ describe("TaskCard Component", () => {
       expect(screen.queryByText(/🔁/)).not.toBeInTheDocument()
     })
   })
+
+  describe("Time-tracking pill", () => {
+    it("shows actual vs estimate", () => {
+      render(<TaskCard task={{ ...mockTask, timeEstimateMin: 60, actualMin: 45 } as any} />)
+      expect(screen.getByText("⏱ 45m/60m")).toBeInTheDocument()
+    })
+
+    it("goes amber when actual exceeds the estimate", () => {
+      render(<TaskCard task={{ ...mockTask, timeEstimateMin: 30, actualMin: 50 } as any} />)
+      expect(screen.getByText("⏱ 50m/30m").className).toContain("bg-warning-100")
+    })
+
+    it("shows actual-only (green) when there's no estimate", () => {
+      render(<TaskCard task={{ ...mockTask, actualMin: 20 } as any} />)
+      const pill = screen.getByText("⏱ 20m")
+      expect(pill.className).toContain("bg-success-100")
+    })
+
+    it("shows no pill when there's neither estimate nor tracked time", () => {
+      render(<TaskCard task={mockTask} />)
+      expect(screen.queryByText(/⏱/)).not.toBeInTheDocument()
+    })
+  })
 })
