@@ -36,6 +36,22 @@ export async function GET(request: Request) {
       where: { userId: session.user.id, parentTaskId: null }
     })
 
+    // Start times of completed pomodoros over ~2 years, for the focus streak (the
+    // streak needs a long history and is bucketed by LOCAL day on the client).
+    const streakStart = new Date()
+    streakStart.setDate(streakStart.getDate() - 366 * 2)
+    const streakSessions = await prisma.focusSession.findMany({
+      where: {
+        userId: session.user.id,
+        status: "completed",
+        type: "pomodoro",
+        startTime: { gte: streakStart }
+      },
+      select: { startTime: true },
+      orderBy: { startTime: "desc" }
+    })
+    const focusSessionStarts = streakSessions.map((s) => s.startTime.toISOString())
+
     // Calculate daily focus time
     const dailyFocusTime: Record<string, number> = {}
     const sessionsPerDay: Record<string, number> = {}
@@ -99,7 +115,8 @@ export async function GET(request: Request) {
       dailyData,
       taskStats,
       sessionStats,
-      peakHours
+      peakHours,
+      focusSessionStarts
     })
   } catch (error) {
     console.error("Analytics error:", error)
