@@ -94,6 +94,16 @@ function reminderCreateInput(reminders: string[] | undefined, userId: string) {
   return out
 }
 
+/**
+ * Normalize an estimate field for an update: `null` clears it, a positive integer
+ * sets it, and anything else (0, negative, non-integer) returns `undefined` so the
+ * caller leaves the column untouched rather than persisting garbage.
+ */
+function normalizeEstimate(v: number | null): number | null | undefined {
+  if (v === null) return null
+  return Number.isInteger(v) && v > 0 ? v : undefined
+}
+
 const taskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -255,8 +265,8 @@ export async function updateTask(
     dueDate?: string
     startDate?: string
     isAllDay?: boolean
-    timeEstimateMin?: number
-    estimatedPomos?: number
+    timeEstimateMin?: number | null
+    estimatedPomos?: number | null
     parentTaskId?: string | null
     listId?: string | null
     goalId?: string | null
@@ -329,11 +339,16 @@ export async function updateTask(
       }
     }
     if (data.isAllDay !== undefined) updateData.isAllDay = data.isAllDay
+    // Estimates: null clears; a positive integer sets; anything else (0, negative,
+    // non-int) is ignored so a bad value can't reach the column (the create path
+    // enforces the same via zod .int().positive()).
     if (data.timeEstimateMin !== undefined) {
-      updateData.timeEstimateMin = data.timeEstimateMin
+      const v = normalizeEstimate(data.timeEstimateMin)
+      if (v !== undefined) updateData.timeEstimateMin = v
     }
     if (data.estimatedPomos !== undefined) {
-      updateData.estimatedPomos = data.estimatedPomos
+      const v = normalizeEstimate(data.estimatedPomos)
+      if (v !== undefined) updateData.estimatedPomos = v
     }
 
     if (data.parentTaskId !== undefined) {
@@ -583,8 +598,33 @@ export async function getTasks(userId?: string) {
       },
     })
 
-    // Flatten TaskTag[] -> the tag rows for the client.
-    return tasks.map((t) => ({ ...t, tags: (t.tags ?? []).map((tt) => tt.tag) }))
+    // Actual time per task = summed wall-clock of that task's COMPLETED pomodoro
+    // sessions (derived, not stored). Not the `duration` column — that's planned
+    // seconds. One query, bucketed by taskId, rather than a per-task include.
+    const sessions = await prisma.focusSession.findMany({
+      where: {
+        userId: targetUserId,
+        status: "completed",
+        type: "pomodoro",
+        taskId: { not: null },
+      },
+      select: { taskId: true, startTime: true, endTime: true },
+    })
+    const actualByTask = new Map<string, number>()
+    for (const s of sessions) {
+      if (!s.taskId || !s.endTime) continue
+      const mins = Math.floor(
+        (new Date(s.endTime).getTime() - new Date(s.startTime).getTime()) / 60000,
+      )
+      if (mins > 0) actualByTask.set(s.taskId, (actualByTask.get(s.taskId) ?? 0) + mins)
+    }
+
+    // Flatten TaskTag[] -> the tag rows for the client, and attach derived actualMin.
+    return tasks.map((t) => ({
+      ...t,
+      tags: (t.tags ?? []).map((tt) => tt.tag),
+      actualMin: actualByTask.get(t.id) ?? 0,
+    }))
   } catch (error) {
     return []
   }
