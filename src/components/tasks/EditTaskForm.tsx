@@ -96,6 +96,11 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
   const [loading, setLoading] = useState(false)
   const [newSubtask, setNewSubtask] = useState("")
   const [subtaskBusy, setSubtaskBusy] = useState(false)
+  // AI subtask suggestions: a review checklist the user approves before creating.
+  const [suggestions, setSuggestions] = useState<{ title: string; checked: boolean }[]>([])
+  const [suggesting, setSuggesting] = useState(false) // fetching suggestions
+  const [addingSubs, setAddingSubs] = useState(false) // creating the chosen ones
+  const [aiSubError, setAiSubError] = useState("")
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
   // "Tell AI what to change" box: sends a natural-language instruction to the
@@ -213,6 +218,85 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
   const removeSubtask = async (id: string) => {
     await deleteTask(id)
     onUpdate?.()
+  }
+
+  // AI subtask breakdown: fetch suggestions (checklist, all checked), then create
+  // only the ones the user keeps. The endpoint only proposes — nothing is written
+  // until the user clicks "Add selected".
+  const suggestSubtasks = async () => {
+    if (suggesting || addingSubs) return
+    setSuggesting(true)
+    setAiSubError("")
+    try {
+      const res = await fetch("/api/ai/subtasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: task.id }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setAiSubError(data.message || data.error || "Couldn't suggest subtasks.")
+        return
+      }
+      const list: string[] = Array.isArray(data.subtasks) ? data.subtasks : []
+      if (list.length === 0) {
+        setAiSubError("The AI didn't come up with any subtasks. Try adding more detail to the task.")
+        return
+      }
+      setSuggestions(list.map((title) => ({ title, checked: true })))
+    } catch {
+      setAiSubError("Couldn't reach the AI. Please try again.")
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  const addSelectedSuggestions = async () => {
+    const chosen = suggestions.filter((s) => s.checked)
+    if (chosen.length === 0 || addingSubs || suggesting) return
+    setAddingSubs(true)
+    setAiSubError("")
+
+    // Create sequentially so each subtask gets a distinct order (createTask derives
+    // order from the current max). createTask RETURNS { error } (it doesn't throw)
+    // for failures like a concurrently-deleted parent/list, so we must inspect each
+    // result — otherwise a failure would be silently reported as success.
+    const created = new Set<string>()
+    let failure = ""
+    try {
+      for (const s of chosen) {
+        const res = await createTask({
+          title: s.title,
+          parentTaskId: task.id,
+          listId: task.listId ?? undefined,
+        })
+        if (res?.error) {
+          failure = res.error
+          break
+        }
+        created.add(s.title)
+      }
+    } catch {
+      failure = "Couldn't add the subtasks. Please try again."
+    } finally {
+      setAddingSubs(false)
+    }
+
+    // Refresh if anything landed so committed subtasks appear.
+    if (created.size > 0) onUpdate?.()
+
+    if (failure) {
+      // Drop the ones that succeeded (so a retry can't duplicate them); keep the
+      // rest of the checklist and surface what went wrong.
+      setSuggestions((prev) => prev.filter((s) => !created.has(s.title)))
+      setAiSubError(
+        created.size > 0
+          ? `Added ${created.size}, but couldn't add the rest: ${failure}`
+          : failure,
+      )
+    } else {
+      setSuggestions([])
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -502,7 +586,70 @@ export default function EditTaskForm({ task, subtasks, onClose, onUpdate }: Edit
           >
             Add
           </button>
+          <button
+            type="button"
+            onClick={suggestSubtasks}
+            disabled={suggesting || addingSubs}
+            aria-busy={suggesting}
+            className="px-3 py-1.5 text-sm border border-primary-300 text-primary-700 rounded-lg hover:bg-primary-50 disabled:opacity-50 disabled:cursor-not-allowed transition whitespace-nowrap"
+          >
+            {suggesting ? "Thinking…" : "✨ Suggest"}
+          </button>
         </div>
+
+        {aiSubError && (
+          <p role="alert" className="mt-2 text-sm text-danger-600">
+            {aiSubError}
+          </p>
+        )}
+
+        {suggestions.length > 0 && (
+          <div className="mt-3 rounded-lg border border-primary-200 bg-primary-50/50 p-3">
+            <p className="mb-2 text-xs font-medium text-primary-800">
+              AI suggestions — uncheck any you don't want, then add.
+            </p>
+            <ul className="space-y-1">
+              {suggestions.map((s, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={s.checked}
+                    onChange={() =>
+                      setSuggestions((prev) =>
+                        prev.map((p, j) => (j === i ? { ...p, checked: !p.checked } : p)),
+                      )
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    aria-label={`Include subtask ${s.title}`}
+                  />
+                  <span className="flex-1 text-sm text-gray-700">{s.title}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={addSelectedSuggestions}
+                disabled={addingSubs || suggesting || suggestions.every((s) => !s.checked)}
+                aria-busy={addingSubs}
+                className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                {addingSubs ? "Adding…" : `Add ${suggestions.filter((s) => s.checked).length} selected`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSuggestions([])
+                  setAiSubError("")
+                }}
+                disabled={addingSubs}
+                className="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 pt-4">
