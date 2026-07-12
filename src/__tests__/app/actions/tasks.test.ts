@@ -33,6 +33,7 @@ jest.mock("@/lib/prisma", () => ({
     },
     list: { findFirst: jest.fn() },
     goal: { findFirst: jest.fn() },
+    focusSession: { findMany: jest.fn() },
     $transaction: jest.fn(),
   },
 }))
@@ -61,6 +62,8 @@ describe("Task Actions", () => {
     jest.clearAllMocks()
     // Default: no existing tasks, so createTask seeds order = 10.
     ;(mockPrisma.task.aggregate as jest.Mock).mockResolvedValue({ _max: { order: null } })
+    // getTasks derives actualMin from completed pomodoro sessions — default none.
+    ;(mockPrisma.focusSession.findMany as jest.Mock).mockResolvedValue([])
     // Mock console methods to avoid noise in tests
     jest.spyOn(console, "log").mockImplementation(() => {})
     jest.spyOn(console, "error").mockImplementation(() => {})
@@ -512,6 +515,41 @@ describe("Task Actions", () => {
       })
     })
 
+    it("sets a positive time estimate and pomodoro count", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.findFirst.mockResolvedValue({ id: "task-1", userId: "user-123" } as any)
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      await updateTask("task-1", { timeEstimateMin: 90, estimatedPomos: 4 })
+
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data.timeEstimateMin).toBe(90)
+      expect(data.estimatedPomos).toBe(4)
+    })
+
+    it("clears an estimate when passed null", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.findFirst.mockResolvedValue({ id: "task-1", userId: "user-123" } as any)
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      await updateTask("task-1", { timeEstimateMin: null })
+
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data.timeEstimateMin).toBeNull()
+    })
+
+    it("ignores a non-positive/invalid estimate rather than persisting garbage", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.findFirst.mockResolvedValue({ id: "task-1", userId: "user-123" } as any)
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      await updateTask("task-1", { timeEstimateMin: -5, estimatedPomos: 0 })
+
+      const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
+      expect(data).not.toHaveProperty("timeEstimateMin")
+      expect(data).not.toHaveProperty("estimatedPomos")
+    })
+
     it("leaves the existing due date untouched when a non-empty date fails to parse", async () => {
       mockAuth.mockResolvedValue(mockSession)
       mockPrisma.task.findFirst.mockResolvedValue({
@@ -702,7 +740,35 @@ describe("Task Actions", () => {
           reminders: { select: { id: true, triggerAt: true }, orderBy: { triggerAt: "asc" } },
         }
       })
-      expect(result).toEqual(tasks)
+      expect(result).toEqual(tasks.map((t) => ({ ...t, actualMin: 0 })))
+    })
+
+    it("derives actualMin from each task's completed pomodoro sessions", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.findMany.mockResolvedValue([
+        { id: "task-1", userId: "user-123", title: "T1", tags: [] },
+        { id: "task-2", userId: "user-123", title: "T2", tags: [] },
+      ] as any)
+      ;(mockPrisma.focusSession.findMany as jest.Mock).mockResolvedValue([
+        { taskId: "task-1", startTime: new Date("2026-07-10T10:00:00Z"), endTime: new Date("2026-07-10T10:25:00Z") },
+        { taskId: "task-1", startTime: new Date("2026-07-10T11:00:00Z"), endTime: new Date("2026-07-10T11:30:00Z") },
+        { taskId: "ghost", startTime: new Date("2026-07-10T09:00:00Z"), endTime: new Date("2026-07-10T09:30:00Z") },
+      ])
+
+      const result = await getTasks()
+
+      expect(result.find((t: any) => t.id === "task-1")?.actualMin).toBe(55) // 25 + 30
+      expect(result.find((t: any) => t.id === "task-2")?.actualMin).toBe(0)
+      // Only completed pomodoros for owned tasks are summed.
+      expect(mockPrisma.focusSession.findMany).toHaveBeenCalledWith({
+        where: {
+          userId: "user-123",
+          status: "completed",
+          type: "pomodoro",
+          taskId: { not: null },
+        },
+        select: { taskId: true, startTime: true, endTime: true },
+      })
     })
 
     it("should use provided userId directly", async () => {
@@ -723,7 +789,7 @@ describe("Task Actions", () => {
           reminders: { select: { id: true, triggerAt: true }, orderBy: { triggerAt: "asc" } },
         }
       })
-      expect(result).toEqual(tasks)
+      expect(result).toEqual(tasks.map((t) => ({ ...t, actualMin: 0 })))
     })
 
     it("should return empty array on error", async () => {
