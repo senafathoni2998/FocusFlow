@@ -55,6 +55,8 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
   const [tags, setTags] = useState("")
   const [recurrence, setRecurrence] = useState("")
   const [reminders, setReminders] = useState<string[]>([])
+  const [timeEstimateMin, setTimeEstimateMin] = useState("")
+  const [estimatedPomos, setEstimatedPomos] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
@@ -90,6 +92,8 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       reminders,
       recurrence: recurrence || null,
+      timeEstimateMin: timeEstimateMin ? parseInt(timeEstimateMin, 10) : undefined,
+      estimatedPomos: estimatedPomos ? parseInt(estimatedPomos, 10) : undefined,
     })
 
     if (result.error) {
@@ -105,6 +109,8 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
       setTags("")
       setRecurrence("")
       setReminders([])
+      setTimeEstimateMin("")
+      setEstimatedPomos("")
       setLoading(false)
       onClose?.()
     }
@@ -177,6 +183,38 @@ export default function CreateTaskForm({ onClose, lists = [], goals = [], defaul
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="timeEstimateMin" className="block text-sm font-medium text-gray-700 mb-2">
+            Time estimate <span className="text-gray-400 font-normal">(min)</span>
+          </label>
+          <input
+            id="timeEstimateMin"
+            type="number"
+            min="1"
+            value={timeEstimateMin}
+            onChange={(e) => setTimeEstimateMin(e.target.value)}
+            placeholder="e.g. 60"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="estimatedPomos" className="block text-sm font-medium text-gray-700 mb-2">
+            Est. pomodoros
+          </label>
+          <input
+            id="estimatedPomos"
+            type="number"
+            min="1"
+            value={estimatedPomos}
+            onChange={(e) => setEstimatedPomos(e.target.value)}
+            placeholder="e.g. 3"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition text-gray-700 placeholder:text-gray-400"
           />
         </div>
       </div>
