@@ -31,6 +31,13 @@ jest.mock("@/components/timer/PomodoroTimer", () => {
   }
 })
 
+// Mock the focus-streak card (it fetches analytics; the page test only cares about structure).
+jest.mock("@/components/dashboard/FocusStreak", () => {
+  return function MockFocusStreak() {
+    return <div data-testid="focus-streak" />
+  }
+})
+
 import { auth } from "@/lib/auth"
 const mockRedirect = redirect as jest.MockedFunction<typeof redirect>
 const mockAuth = auth as jest.MockedFunction<typeof auth>
