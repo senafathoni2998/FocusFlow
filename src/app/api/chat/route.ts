@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import {
   createTask,
   updateTask,
+  completeTask,
   deleteTask,
   getTasks,
 } from "@/app/actions/tasks";
@@ -624,15 +625,33 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
           ) {
             delete functionArgs.description;
           }
-          result = await updateTask(
-            functionArgs.id as string,
-            functionArgs as any,
-          );
-          pushFunctionResult(
-            result.error
-              ? { error: result.error }
-              : { success: true, task: result.task },
-          );
+          // Completing a task is a discrete action that must roll a RECURRING task
+          // forward — route it through completeTask (the same action the board
+          // checkbox uses), not a plain status write that would silently end the
+          // recurrence.
+          if (functionArgs.status === "completed") {
+            const completed = await completeTask(functionArgs.id as string);
+            result = completed;
+            pushFunctionResult(
+              completed.error
+                ? { error: completed.error }
+                : {
+                    success: true,
+                    recurred: !!(completed as any).recurred,
+                    task: (completed as any).task,
+                  },
+            );
+          } else {
+            result = await updateTask(
+              functionArgs.id as string,
+              functionArgs as any,
+            );
+            pushFunctionResult(
+              result.error
+                ? { error: result.error }
+                : { success: true, task: result.task },
+            );
+          }
           break;
 
         case "deleteTask":
