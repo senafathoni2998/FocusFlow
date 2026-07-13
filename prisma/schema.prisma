@@ -108,6 +108,11 @@ model RecurrenceRule {
   interval       Int       @default(1)
   byWeekday      Int[]     @default([]) // 0-6 (Sun-Sat), weekly only
   anchorMode     String    @default("due") // due | completion
+  // The first occurrence's date. Monthly/yearly occurrences are computed as
+  // anchorDate + interval*N so a short month (e.g. Feb for a "31st" task) clamps
+  // for that month but recovers on the next long month, instead of the clamp
+  // compounding when the rolled-forward date is fed back as the next anchor.
+  anchorDate     DateTime?
   until          DateTime?
   count          Int?
   completedCount Int       @default(0)
