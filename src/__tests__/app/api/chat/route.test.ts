@@ -62,12 +62,14 @@ jest.mock("openai", () => {
 // Mock task actions - inline to avoid hoisting issues
 const mockCreateTask = jest.fn()
 const mockUpdateTask = jest.fn()
+const mockCompleteTask = jest.fn()
 const mockDeleteTask = jest.fn()
 const mockGetTasks = jest.fn()
 
 jest.mock("@/app/actions/tasks", () => ({
   createTask: (...args: any[]) => mockCreateTask(...args),
   updateTask: (...args: any[]) => mockUpdateTask(...args),
+  completeTask: (...args: any[]) => mockCompleteTask(...args),
   deleteTask: (...args: any[]) => mockDeleteTask(...args),
   getTasks: (...args: any[]) => mockGetTasks(...args),
 }))
@@ -482,11 +484,11 @@ describe("Chat API Route", () => {
       ])
     })
 
-    it("should call updateTask when AI requests it", async () => {
+    it("should call updateTask when AI requests a non-completion change", async () => {
       const updatedTask = {
         id: "task-123",
         title: "Existing Task",
-        status: "completed",
+        status: "in-progress",
         priority: "high",
       }
 
@@ -499,7 +501,7 @@ describe("Chat API Route", () => {
                 name: "updateTask",
                 arguments: JSON.stringify({
                   id: "task-123",
-                  status: "completed",
+                  status: "in-progress",
                   priority: "high",
                 }),
               } }],
@@ -508,14 +510,14 @@ describe("Chat API Route", () => {
         })
         .mockResolvedValueOnce({
           choices: [{
-            message: { content: "I've marked 'Existing Task' as completed." },
+            message: { content: "I've started 'Existing Task'." },
           }],
         })
 
       mockUpdateTask.mockResolvedValue({ task: updatedTask })
 
       const request = await createRequest({
-        message: "Mark Existing Task as completed",
+        message: "Start Existing Task",
       })
 
       const response = await POST(request)
@@ -523,11 +525,45 @@ describe("Chat API Route", () => {
 
       expect(mockUpdateTask).toHaveBeenCalledWith("task-123", {
         id: "task-123",
-        status: "completed",
+        status: "in-progress",
         priority: "high",
       })
+      expect(mockCompleteTask).not.toHaveBeenCalled()
       expect(data.functionCall?.name).toBe("updateTask")
       expect(data.functionCall?.result?.task).toEqual(updatedTask)
+    })
+
+    it("routes a status:'completed' change through completeTask (recurrence-safe)", async () => {
+      mockCompleteTask.mockResolvedValue({ success: true, recurred: true })
+
+      mockChatCreate
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{ id: "call_1", type: "function", function: {
+                name: "updateTask",
+                arguments: JSON.stringify({ id: "task-123", status: "completed" }),
+              } }],
+            },
+          }],
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: "Done — it'll come back tomorrow." } }],
+        })
+
+      const response = await POST(await createRequest({ message: "mark Existing Task done" }))
+      const data = await response.json()
+
+      // completeTask (not a plain status write) so a recurring task rolls forward.
+      expect(mockCompleteTask).toHaveBeenCalledWith("task-123")
+      expect(mockUpdateTask).not.toHaveBeenCalled()
+      expect(data.functionCall?.name).toBe("updateTask")
+
+      // The recurred flag is marshaled back to the model.
+      const followUp = mockChatCreate.mock.calls[1][0].messages
+      const fnMsg = followUp.find((m: any) => m.role === "tool")
+      expect(JSON.parse(fnMsg.content)).toEqual({ success: true, recurred: true })
     })
 
     it("should handle updateTask errors gracefully", async () => {
@@ -540,7 +576,7 @@ describe("Chat API Route", () => {
                 name: "updateTask",
                 arguments: JSON.stringify({
                   id: "task-123",
-                  status: "completed",
+                  priority: "high",
                 }),
               } }],
             },
@@ -1433,14 +1469,14 @@ describe("Chat API Route", () => {
     })
 
     it("drops an empty-string description so an edit can't blank the user's notes", async () => {
-      mockFunctionCall("updateTask", { id: "task-123", status: "completed", description: "" })
+      mockFunctionCall("updateTask", { id: "task-123", priority: "high", description: "" })
 
-      await POST(await createRequest({ message: "mark Existing Task done" }))
+      await POST(await createRequest({ message: "make Existing Task high priority" }))
 
       expect(mockUpdateTask).toHaveBeenCalledTimes(1)
       const args = mockUpdateTask.mock.calls[0][1]
       expect(args).not.toHaveProperty("description")
-      expect(args.status).toBe("completed")
+      expect(args.priority).toBe("high")
     })
 
     it("drops a whitespace-only description too", async () => {
