@@ -214,6 +214,9 @@ export async function createTask(data: {
           freq: validated.recurrence,
           interval: 1,
           anchorMode: "due",
+          // The first occurrence's date, so monthly/yearly rolls don't drift.
+          anchorDate:
+            parseDateInput(validated.dueDate) ?? parseDateInput(validated.startDate) ?? undefined,
           userId: session.user.id,
         },
       })
@@ -286,7 +289,10 @@ export async function updateTask(
     // replace, them below — a full replace would resurface already-delivered ones).
     const existingTask = await prisma.task.findFirst({
       where: { id, userId: session.user.id },
-      include: { reminders: { select: { id: true, triggerAt: true } } },
+      include: {
+        reminders: { select: { id: true, triggerAt: true } },
+        recurrence: { select: { freq: true } },
+      },
     })
 
     if (!existingTask) {
@@ -432,14 +438,38 @@ export async function updateTask(
     let ruleToDelete: string | null = null
     if (data.recurrence !== undefined) {
       if (isRecurrenceFreq(data.recurrence)) {
+        // Anchor to the task's (possibly just-changed) due/start date so
+        // monthly/yearly rolls don't drift.
+        const newDue = data.dueDate !== undefined ? updateData.dueDate : existingTask.dueDate
+        const newStart = data.startDate !== undefined ? updateData.startDate : existingTask.startDate
+        const anchorDate = newDue ?? newStart ?? null
         if (existingTask.recurrenceId) {
+          // Re-anchor AND restart the occurrence count when the schedule actually
+          // changes — either the frequency or the anchoring due/start date. Keeping
+          // the old completedCount after a re-anchor would make computeNextOccurrence
+          // (which uses anchor + interval*(completedCount+1)) jump far into the
+          // future. A no-op save (the edit form resends recurrence + dates
+          // unchanged) must leave both the anchor and the count alone.
+          const oldAnchor = existingTask.dueDate ?? existingTask.startDate ?? null
+          const freqChanged = existingTask.recurrence?.freq !== data.recurrence
+          const anchorChanged =
+            (anchorDate?.getTime() ?? null) !== (oldAnchor?.getTime() ?? null)
           await prisma.recurrenceRule.update({
             where: { id: existingTask.recurrenceId },
-            data: { freq: data.recurrence },
+            data:
+              freqChanged || anchorChanged
+                ? { freq: data.recurrence, anchorDate, completedCount: 0 }
+                : { freq: data.recurrence },
           })
         } else {
           const rule = await prisma.recurrenceRule.create({
-            data: { freq: data.recurrence, interval: 1, anchorMode: "due", userId: session.user.id },
+            data: {
+              freq: data.recurrence,
+              interval: 1,
+              anchorMode: "due",
+              anchorDate,
+              userId: session.user.id,
+            },
           })
           updateData.recurrenceId = rule.id
         }
