@@ -299,6 +299,24 @@ describe("Task Actions", () => {
       await createTask({ title: "T", reminders: ["2026-07-10T14:30", "2026-07-10T14:30:00"] })
       expect((mockPrisma.task.create as jest.Mock).mock.calls[0][0].data.reminders.create).toHaveLength(1)
     })
+
+    it("stores the anchorDate when creating a recurring task", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.recurrenceRule.create as jest.Mock).mockResolvedValue({ id: "r1" })
+      mockPrisma.task.create.mockResolvedValue({ id: "task-1" } as any)
+
+      await createTask({ title: "Pay rent", dueDate: "2026-01-31", recurrence: "monthly" })
+
+      expect(mockPrisma.recurrenceRule.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            freq: "monthly",
+            anchorMode: "due",
+            anchorDate: new Date(2026, 0, 31),
+          }),
+        })
+      )
+    })
   })
 
   describe("updateTask", () => {
@@ -548,6 +566,64 @@ describe("Task Actions", () => {
       const data = (mockPrisma.task.update as jest.Mock).mock.calls[0][0].data
       expect(data).not.toHaveProperty("timeEstimateMin")
       expect(data).not.toHaveProperty("estimatedPomos")
+    })
+
+    it("re-anchors recurrence when the frequency changes", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        dueDate: new Date(2026, 0, 31),
+        recurrenceId: "r1",
+        recurrence: { freq: "daily" },
+      })
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      await updateTask("task-1", { recurrence: "monthly" })
+
+      expect(mockPrisma.recurrenceRule.update).toHaveBeenCalledWith({
+        where: { id: "r1" },
+        data: { freq: "monthly", anchorDate: new Date(2026, 0, 31), completedCount: 0 },
+      })
+    })
+
+    it("re-anchors and restarts the count when the due date is rescheduled", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        dueDate: new Date(2026, 0, 15),
+        recurrenceId: "r1",
+        recurrence: { freq: "monthly" },
+      })
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      await updateTask("task-1", { dueDate: "2026-01-25", recurrence: "monthly" })
+
+      expect(mockPrisma.recurrenceRule.update).toHaveBeenCalledWith({
+        where: { id: "r1" },
+        data: { freq: "monthly", anchorDate: new Date(2026, 0, 25), completedCount: 0 },
+      })
+    })
+
+    it("does NOT reset the anchor on a no-op recurrence save", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        dueDate: new Date(2026, 3, 30),
+        recurrenceId: "r1",
+        recurrence: { freq: "monthly" },
+      })
+      mockPrisma.task.update.mockResolvedValue({ id: "task-1" } as any)
+
+      await updateTask("task-1", { recurrence: "monthly" })
+
+      // Same freq -> update touches only freq, leaving the original anchor intact.
+      expect(mockPrisma.recurrenceRule.update).toHaveBeenCalledWith({
+        where: { id: "r1" },
+        data: { freq: "monthly" },
+      })
     })
 
     it("leaves the existing due date untouched when a non-empty date fails to parse", async () => {
@@ -1019,6 +1095,38 @@ describe("Task Actions", () => {
         data: { completedCount: { increment: 1 } },
       })
       expect(res).toEqual({ success: true, recurred: true })
+    })
+
+    it("rolls a monthly recurring task forward using the stored anchor (no drift)", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findFirst as jest.Mock).mockResolvedValue({
+        id: "task-1",
+        userId: "user-123",
+        dueDate: new Date(2026, 1, 28), // currently the clamped Feb 28 occurrence
+        startDate: null,
+        recurrence: {
+          id: "r1",
+          freq: "monthly",
+          interval: 1,
+          anchorMode: "due",
+          anchorDate: new Date(2026, 0, 31), // original: Jan 31
+          completedCount: 1,
+          count: null,
+          until: null,
+          byWeekday: [],
+        },
+      })
+      ;(mockPrisma.$transaction as jest.Mock).mockResolvedValue([])
+
+      await completeTask("task-1")
+
+      // Recovers to Mar 31 (anchor + 2 months), not Mar 28 (drifted).
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "task-1" },
+          data: expect.objectContaining({ dueDate: new Date(2026, 2, 31) }),
+        })
+      )
     })
   })
 })
