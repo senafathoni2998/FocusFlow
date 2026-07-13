@@ -24,6 +24,9 @@ export interface RecurrenceLike {
   freq: string
   interval?: number
   byWeekday?: number[]
+  anchorMode?: string
+  /** First occurrence's date; anchors monthly/yearly rolls (see below). */
+  anchorDate?: Date | string | null
   until?: Date | string | null
   count?: number | null
   completedCount?: number
@@ -32,12 +35,21 @@ export interface RecurrenceLike {
 /**
  * The next occurrence strictly after `from`, or null when exhausted (the count
  * limit is reached, or the next date would be past `until`).
+ *
+ * Monthly/yearly on a fixed schedule (anchorMode !== "completion") are computed
+ * from the ORIGINAL anchor as `anchor + interval*N`, where N is the occurrence
+ * number being produced. That way a short month (Feb for a "31st" task) clamps
+ * for that month but the next long month recovers to the 31st — instead of the
+ * clamp compounding when the already-clamped `from` is fed back in.
  */
 export function computeNextOccurrence(rule: RecurrenceLike, from: Date): Date | null {
   // count = total occurrences; this completion makes it completedCount + 1.
   if (rule.count != null && (rule.completedCount ?? 0) + 1 >= rule.count) return null
 
   const interval = rule.interval && rule.interval > 0 ? rule.interval : 1
+  const useAnchor = rule.anchorMode !== "completion" && rule.anchorDate != null
+  const n = (rule.completedCount ?? 0) + 1 // occurrence number this roll produces
+
   let next: Date
   switch (rule.freq) {
     case "daily":
@@ -50,10 +62,14 @@ export function computeNextOccurrence(rule: RecurrenceLike, from: Date): Date | 
           : addWeeks(from, interval)
       break
     case "monthly":
-      next = addMonths(from, interval)
+      next = useAnchor
+        ? addMonths(new Date(rule.anchorDate!), interval * n)
+        : addMonths(from, interval)
       break
     case "yearly":
-      next = addYears(from, interval)
+      next = useAnchor
+        ? addYears(new Date(rule.anchorDate!), interval * n)
+        : addYears(from, interval)
       break
     default:
       return null
