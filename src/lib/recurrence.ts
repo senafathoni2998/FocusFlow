@@ -79,6 +79,37 @@ export function computeNextOccurrence(rule: RecurrenceLike, from: Date): Date | 
   return next
 }
 
+/**
+ * Reminder rewrites for a recurring task that just rolled to its next occurrence.
+ *
+ * `Reminder.triggerAt` is an absolute instant and `dispatchedAt` is stamped once a
+ * reminder has been surfaced. Rolling the task forward without touching them left
+ * every reminder pinned to the occurrence that already passed AND already marked
+ * dispatched, so a repeating task's reminders fired exactly once and then never
+ * again for the life of the series.
+ *
+ * Each reminder keeps its offset relative to the task's date, so "20 minutes before
+ * due" stays 20 minutes before due on the next occurrence.
+ *
+ * @param previousRef the date the reminders were set relative to (the old dueDate,
+ *                    falling back to startDate); null when the task had neither, in
+ *                    which case there is no meaningful shift and reminders are left
+ *                    alone.
+ */
+export function shiftedReminders(
+  reminders: { id: string; triggerAt: Date | string }[] | null | undefined,
+  previousRef: Date | null | undefined,
+  next: Date,
+): { id: string; triggerAt: Date }[] {
+  if (!previousRef || !reminders?.length) return []
+  const shiftMs = next.getTime() - new Date(previousRef).getTime()
+  if (shiftMs === 0) return []
+  return reminders.map((r) => ({
+    id: r.id,
+    triggerAt: new Date(new Date(r.triggerAt).getTime() + shiftMs),
+  }))
+}
+
 /** The next calendar day strictly after `from` whose weekday is in the set. */
 function nextWeekday(from: Date, weekdays: number[]): Date {
   const days = Array.from(new Set(weekdays))

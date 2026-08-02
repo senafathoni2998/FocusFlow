@@ -1,4 +1,4 @@
-import { computeNextOccurrence, isRecurrenceFreq } from "@/lib/recurrence"
+import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
 
 const D = (y: number, m: number, d: number) => new Date(y, m, d)
 
@@ -92,5 +92,52 @@ describe("isRecurrenceFreq", () => {
     expect(isRecurrenceFreq("yearly")).toBe(true)
     expect(isRecurrenceFreq("bogus")).toBe(false)
     expect(isRecurrenceFreq(null)).toBe(false)
+  })
+})
+
+describe("shiftedReminders", () => {
+  it("moves each reminder by the same delta the task's date moved", () => {
+    // Due 15 Jun, reminder 20 minutes before it. Rolling to 16 Jun must keep the
+    // reminder 20 minutes before the NEW due date, not leave it on the 15th.
+    const due = new Date(2026, 5, 15, 9, 0)
+    const next = new Date(2026, 5, 16, 9, 0)
+    const reminders = [{ id: "r1", triggerAt: new Date(2026, 5, 15, 8, 40) }]
+
+    expect(shiftedReminders(reminders, due, next)).toEqual([
+      { id: "r1", triggerAt: new Date(2026, 5, 16, 8, 40) },
+    ])
+  })
+
+  it("shifts every reminder on the task, preserving their spacing", () => {
+    const due = new Date(2026, 5, 15, 9, 0)
+    const next = new Date(2026, 5, 22, 9, 0) // weekly
+    const reminders = [
+      { id: "r1", triggerAt: new Date(2026, 5, 14, 9, 0) }, // a day before
+      { id: "r2", triggerAt: new Date(2026, 5, 15, 8, 30) }, // 30 min before
+    ]
+
+    expect(shiftedReminders(reminders, due, next)).toEqual([
+      { id: "r1", triggerAt: new Date(2026, 5, 21, 9, 0) },
+      { id: "r2", triggerAt: new Date(2026, 5, 22, 8, 30) },
+    ])
+  })
+
+  it("accepts ISO strings as well as Dates", () => {
+    const out = shiftedReminders(
+      [{ id: "r1", triggerAt: new Date(2026, 5, 15, 8, 40).toISOString() }],
+      new Date(2026, 5, 15, 9, 0),
+      new Date(2026, 5, 16, 9, 0),
+    )
+    expect(out).toEqual([{ id: "r1", triggerAt: new Date(2026, 5, 16, 8, 40) }])
+  })
+
+  it("is a no-op when there is nothing to shift", () => {
+    const due = new Date(2026, 5, 15)
+    expect(shiftedReminders([], due, new Date(2026, 5, 16))).toEqual([])
+    expect(shiftedReminders(undefined, due, new Date(2026, 5, 16))).toEqual([])
+    // No previous reference date: the offset is undefined, so leave them alone.
+    expect(shiftedReminders([{ id: "r1", triggerAt: due }], null, new Date(2026, 5, 16))).toEqual([])
+    // Same date in and out.
+    expect(shiftedReminders([{ id: "r1", triggerAt: due }], due, due)).toEqual([])
   })
 })

@@ -8,7 +8,7 @@ import {
   priorityRankOf,
   isTerminalStatus,
 } from "@/lib/taskConstants"
-import { computeNextOccurrence, isRecurrenceFreq } from "@/lib/recurrence"
+import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
 
 /**
  * Task domain logic for the mobile API. This mirrors `src/app/actions/tasks.ts`
@@ -437,7 +437,7 @@ export async function updateTask(userId: string, id: string, input: unknown) {
 export async function completeTask(userId: string, id: string) {
   const task = await prisma.task.findFirst({
     where: { id, userId },
-    include: { recurrence: true },
+    include: { recurrence: true, reminders: { select: { id: true, triggerAt: true } } },
   })
   if (!task) throw notFound("Task not found")
 
@@ -454,6 +454,14 @@ export async function completeTask(userId: string, id: string) {
           ? new Date(next.getTime() - (task.dueDate.getTime() - task.startDate.getTime()))
           : task.startDate
 
+      // Move the reminders with the task and re-arm them; otherwise they stay
+      // pinned to the occurrence that just passed and stay marked dispatched.
+      const reminderMoves = shiftedReminders(
+        task.reminders,
+        task.dueDate ?? task.startDate,
+        next,
+      )
+
       await prisma.$transaction([
         prisma.task.update({
           where: { id },
@@ -463,6 +471,12 @@ export async function completeTask(userId: string, id: string) {
           where: { id: task.recurrence.id },
           data: { completedCount: { increment: 1 } },
         }),
+        ...reminderMoves.map((r) =>
+          prisma.reminder.update({
+            where: { id: r.id },
+            data: { triggerAt: r.triggerAt, dispatchedAt: null },
+          }),
+        ),
       ])
 
       const rolled = await prisma.task.findFirst({ where: { id, userId }, include: TASK_INCLUDE })
