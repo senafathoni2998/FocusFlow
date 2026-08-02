@@ -148,6 +148,18 @@ export function computeHabitStats(habit: Habit, now: Date = new Date()): HabitSt
       weeks++
       if (satisfied >= target) satisfiedWeeks++
     }
+    // From the 1st until the month's first Sunday, no week anchor falls inside the
+    // month, so the loop above counts zero weeks and the rate reported a flat 0% —
+    // an identical daily habit shows 100% on the same day. That window is 1-6 days
+    // long in 11 months out of 12. Fall back to the current (boundary-crossing)
+    // week, which is the only week that has actually elapsed this month.
+    if (weeks === 0) {
+      const ws = weekAt(0)
+      if (!createdWeekStart || ws >= createdWeekStart) {
+        weeks = 1
+        if (satisfiedInWeek(ws) >= target) satisfiedWeeks = 1
+      }
+    }
     const monthlyRate = weeks > 0 ? Math.round((satisfiedWeeks / weeks) * 100) : 0
 
     return {

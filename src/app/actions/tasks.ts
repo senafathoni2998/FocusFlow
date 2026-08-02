@@ -11,6 +11,7 @@ import {
   isTerminalStatus,
 } from "@/lib/taskConstants"
 import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
+import { normalizeTagName } from "@/lib/tags"
 import { startOfDay } from "date-fns"
 
 /**
@@ -56,7 +57,10 @@ function tagCreateInput(tagNames: string[] | undefined, userId: string) {
   const names = Array.from(
     new Set(
       (tagNames ?? [])
-        .map((t) => t.trim())
+        // normalizeTagName also strips commas — the web forms and the ?tags= filter
+        // are comma-delimited, so a name containing one gets split into two tags on
+        // the next save and detaches from the task.
+        .map((t) => normalizeTagName(t))
         .filter((t) => t.length > 0 && t.length <= MAX_TAG_LEN)
     )
   ).slice(0, MAX_TAGS_PER_TASK)

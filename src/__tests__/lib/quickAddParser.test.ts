@@ -178,3 +178,22 @@ describe("hasDateHint", () => {
     expect(hasDateHint("someday maybe")).toBe(false)
   })
 })
+
+describe("parseQuickAdd — strips the matched token, not the first lookalike", () => {
+  it("keeps the word the date regex deliberately skipped", () => {
+    // The weekday pattern skips "Monday" in "next Monday" via a lookbehind, but the
+    // old value-based replace() deleted that first occurrence anyway, saving
+    // "Reschedule next meeting to Monday".
+    // The trailing "Monday" is the one that matches; the earlier one is guarded by
+    // the "next " lookbehind and must survive in the title.
+    const r = parseQuickAdd("Reschedule next Monday meeting to Monday", NOW)
+    expect(r.title).toBe("Reschedule next Monday meeting to")
+    expect(r.dueDate).toBeDefined()
+  })
+
+  it("does not chop an embedded substring out of another word", () => {
+    const r = parseQuickAdd("Buy todays paper today", NOW)
+    expect(r.title).toBe("Buy todays paper")
+    expect(r.dueDate).toBe(ymd(startOfDay(NOW)))
+  })
+})

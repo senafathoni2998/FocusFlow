@@ -44,9 +44,13 @@ export async function getHabits(userId: string) {
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
   })
-  return habits.map((h) => ({
-    ...h,
-    stats: computeHabitStats(h as unknown as HabitShape),
+  // checkIns are needed to compute the stats but must NOT be spread into the
+  // response: the Flutter client has zero readers for them (it renders the
+  // server-computed `stats`, per DECISIONS.md B6), so shipping up to 1200 rows per
+  // habit added roughly a megabyte of uncompressed payload to every Habits tab.
+  return habits.map(({ checkIns, ...rest }) => ({
+    ...rest,
+    stats: computeHabitStats({ ...rest, checkIns } as unknown as HabitShape),
   }))
 }
 
@@ -130,8 +134,12 @@ export async function checkInHabit(userId: string, habitId: string, input: unkno
   })
   return {
     success: true,
+    // Same projection as getHabits: compute from checkIns, then drop them.
     habit: updated
-      ? { ...updated, stats: computeHabitStats(updated as unknown as HabitShape) }
+      ? (({ checkIns, ...rest }) => ({
+          ...rest,
+          stats: computeHabitStats({ ...rest, checkIns } as unknown as HabitShape),
+        }))(updated)
       : null,
   }
 }

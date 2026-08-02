@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { notFound } from "@/lib/apiResponse"
+import { ApiError, badRequest, notFound } from "@/lib/apiResponse"
+import { normalizeTagName } from "@/lib/tags"
 
 /**
  * Tag reads + delete for the mobile API — mirrors `src/app/actions/tags.ts`. Tags
@@ -27,10 +28,26 @@ export async function updateTag(userId: string, id: string, input: unknown) {
   if (!existing) throw notFound("Tag not found")
 
   const data: Record<string, unknown> = {}
-  if (v.name !== undefined) data.name = v.name.trim()
+  if (v.name !== undefined) {
+    // The schema's .min(1) ran BEFORE this trim, so "   " passed validation and
+    // persisted as "", producing a label-less chip that tagCreateInput then filters
+    // out — leaving a tag that can never be re-attached.
+    const name = normalizeTagName(v.name)
+    if (!name) throw badRequest("Tag name cannot be empty")
+    data.name = name
+  }
   if (v.color !== undefined) data.color = v.color
 
-  return prisma.tag.update({ where: { id }, data })
+  try {
+    return await prisma.tag.update({ where: { id }, data })
+  } catch (e) {
+    // @@unique([userId, name]): renaming onto an existing tag is a conflict the
+    // caller can act on, not a server fault.
+    if ((e as { code?: string })?.code === "P2002") {
+      throw new ApiError(409, "You already have a tag with that name")
+    }
+    throw e
+  }
 }
 
 export async function deleteTag(userId: string, id: string) {

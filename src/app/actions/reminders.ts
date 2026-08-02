@@ -18,10 +18,23 @@ export async function getDueReminders() {
   if (!userId) return []
 
   try {
+    // Bounded on both ends. The query had no `take` and no lower bound, so two
+    // weeks of missed reminders were all claimed in a single poll — a burst of OS
+    // notifications and a banner stack taller than the viewport (the container is
+    // bottom-anchored and fixed, so the topmost ones were clipped off-screen and
+    // could not be read or dismissed). A reminder more than a day stale is noise
+    // rather than a reminder; it stays undispatched instead of arriving late.
+    const now = new Date()
+    const staleCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000)
     return await prisma.reminder.findMany({
-      where: { userId, dispatchedAt: null, triggerAt: { lte: new Date() } },
+      where: {
+        userId,
+        dispatchedAt: null,
+        triggerAt: { lte: now, gte: staleCutoff },
+      },
       orderBy: { triggerAt: "asc" },
       include: { task: { select: { id: true, title: true } } },
+      take: 5,
     })
   } catch {
     return []

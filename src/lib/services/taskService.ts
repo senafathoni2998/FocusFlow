@@ -9,6 +9,7 @@ import {
   isTerminalStatus,
 } from "@/lib/taskConstants"
 import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
+import { normalizeTagName } from "@/lib/tags"
 
 /**
  * Task domain logic for the mobile API. This mirrors `src/app/actions/tasks.ts`
@@ -46,7 +47,9 @@ function tagCreateInput(tagNames: string[] | undefined, userId: string) {
   const names = Array.from(
     new Set(
       (tagNames ?? [])
-        .map((t) => t.trim())
+        // Comma-stripping mirrors the web action: the task forms and the ?tags=
+        // filter are comma-delimited, so a comma inside a name corrupts both.
+        .map((t) => normalizeTagName(t))
         .filter((t) => t.length > 0 && t.length <= MAX_TAG_LEN)
     )
   ).slice(0, MAX_TAGS_PER_TASK)
