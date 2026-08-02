@@ -185,9 +185,17 @@ export default function TasksWorkspace({
         }
       }
       if ("custom" in patch) {
-        p.horizon = "custom"
-        p.from = toYMD(patch.custom?.from)
-        p.to = toYMD(patch.custom?.to)
+        const from = toYMD(patch.custom?.from)
+        const to = toYMD(patch.custom?.to)
+        // Only stay on the custom horizon while at least one bound survives.
+        // Setting it unconditionally meant clearing both date inputs left
+        // horizon=custom with null bounds, which resolves to an empty range and
+        // hides every undated task — with no smart list highlighted and both
+        // inputs blank, so nothing on screen explained where the tasks went.
+        // The state is URL-backed, so it could also be saved as a Saved View.
+        p.horizon = from || to ? "custom" : null
+        p.from = from
+        p.to = to
       }
       setParam(p)
     },

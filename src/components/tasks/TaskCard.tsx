@@ -47,9 +47,23 @@ export default function TaskCard({ task, subtasks, onUpdate }: TaskCardProps) {
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this task?")) return;
 
+    // `deleting` was never cleared, and router.refresh() re-renders this same
+    // instance (key = task.id), so any failure — a rejected call or a returned
+    // {error} — left the button disabled and reading "Deleting..." until a full
+    // page reload, with the error itself swallowed.
     setDeleting(true);
-    await deleteTask(task.id);
-    onUpdate?.();
+    try {
+      const res = await deleteTask(task.id);
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
+      onUpdate?.();
+    } catch {
+      alert("Failed to delete task. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const formatDate = (date: Date | null) => {

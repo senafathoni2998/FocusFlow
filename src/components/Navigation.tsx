@@ -1,7 +1,7 @@
 "use client"
 
 import { usePathname } from "next/navigation"
-import { useState, useEffect, startTransition, useCallback } from "react"
+import { useState, useEffect, useRef, startTransition, useCallback } from "react"
 import { signOut, useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 
@@ -13,6 +13,7 @@ export default function Navigation() {
   const [mounted, setMounted] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [previousPathname, setPreviousPathname] = useState("")
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Detect navigation changes
   useEffect(() => {
@@ -24,13 +25,27 @@ export default function Navigation() {
 
   // Custom navigation handler with loading state
   const navigate = useCallback((href: string) => {
+    // Navigating to the route you are already on never changes `pathname`, so the
+    // effect above — the only fast dismissal path — never fires and the full-screen
+    // overlay swallowed every click for the whole 5s fallback. Clicking "Tasks"
+    // while on /tasks, or the logo while on /dashboard, hit this every time.
+    if (href === pathname) return
+
     setIsLoading(true)
     startTransition(() => {
       router.push(href)
     })
-    // Hide loading after a timeout (fallback)
-    setTimeout(() => setIsLoading(false), 5000)
-  }, [router])
+    // Hide loading after a timeout (fallback). Cleared on unmount and superseded
+    // by any later navigation so overlapping clicks can't strand the overlay.
+    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current)
+    loadingTimerRef.current = setTimeout(() => setIsLoading(false), 1500)
+  }, [router, pathname])
+
+  useEffect(() => {
+    return () => {
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current)
+    }
+  }, [])
 
   // Prevent hydration mismatch
   useEffect(() => {
