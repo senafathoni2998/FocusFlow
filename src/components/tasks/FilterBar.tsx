@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef, useState } from "react"
 import type { TaskFilters, SortKey } from "@/lib/taskFilters"
 import type { TagSummary } from "@/types/task"
 
@@ -52,6 +53,33 @@ export default function FilterBar({ filters, view, onChange, onViewChange, allTa
   const toggle = (arr: string[], v: string) =>
     arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]
 
+  // The search box used to be fully controlled by `filters.query`, which comes from
+  // useSearchParams and is only ever written via router.replace inside a transition.
+  // React restores the input's pre-keystroke value after flushing the sync lane, so
+  // characters typed before the RSC round-trip landed were dropped — typing "report"
+  // could end up as ?q=t. Keeping a local draft puts every keystroke on the sync
+  // lane and pushes to the URL on a debounce instead.
+  const [draftQuery, setDraftQuery] = useState(filters.query)
+  const committedQuery = useRef(filters.query)
+
+  // Adopt external changes (Saved View applied, back/forward) without clobbering
+  // what the user is mid-way through typing.
+  useEffect(() => {
+    if (filters.query !== committedQuery.current) {
+      committedQuery.current = filters.query
+      setDraftQuery(filters.query)
+    }
+  }, [filters.query])
+
+  useEffect(() => {
+    if (draftQuery === committedQuery.current) return
+    const t = setTimeout(() => {
+      committedQuery.current = draftQuery
+      onChange({ query: draftQuery })
+    }, 300)
+    return () => clearTimeout(t)
+  }, [draftQuery, onChange])
+
   return (
     <div className="flex flex-wrap items-center gap-2 mb-6">
       {/* View switcher */}
@@ -76,8 +104,8 @@ export default function FilterBar({ filters, view, onChange, onViewChange, allTa
       {/* Search */}
       <input
         type="search"
-        value={filters.query}
-        onChange={(e) => onChange({ query: e.target.value })}
+        value={draftQuery}
+        onChange={(e) => setDraftQuery(e.target.value)}
         placeholder="Search tasks…"
         aria-label="Search tasks"
         className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-primary-500 text-gray-700 placeholder:text-gray-400"
