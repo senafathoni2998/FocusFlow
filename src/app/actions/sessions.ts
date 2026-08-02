@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
+import { cappedEndTime } from "@/lib/sessionTiming"
 
 // These are "use server" exports, i.e. publicly callable endpoints — the caller's
 // arguments are untrusted even when the only in-app caller passes fixed values.
@@ -76,9 +77,12 @@ export async function completeSession(sessionId: string) {
       where: { id: sessionId },
       data: {
         status: "completed",
-        // Stamped server-side. A client-supplied endTime let focus minutes — which
-        // feed the dashboard, weekly review and each task's actualMin — be forged.
-        endTime: new Date()
+        // Stamped server-side AND capped at the planned duration. Focus minutes are
+        // derived as endTime - startTime, and the client countdown is tick-based, so
+        // a suspended laptop or a throttled background tab finishes the timer late
+        // and would otherwise record one "25-minute" pomodoro spanning hours into
+        // every focus metric.
+        endTime: cappedEndTime(existingSession.startTime, existingSession.duration)
       }
     })
 

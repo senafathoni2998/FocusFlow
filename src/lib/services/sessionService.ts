@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { notFound } from "@/lib/apiResponse"
+import { cappedEndTime } from "@/lib/sessionTiming"
 
 /**
  * Focus (pomodoro) sessions for the mobile API — mirrors `src/app/actions/sessions.ts`.
@@ -37,7 +38,12 @@ export async function completeSession(userId: string, id: string) {
   if (!existing) throw notFound("Session not found")
   return prisma.focusSession.update({
     where: { id },
-    data: { status: "completed", endTime: new Date() },
+    // Capped at the planned duration — see cappedEndTime. A phone that sleeps mid
+    // timer would otherwise persist a multi-hour "pomodoro" into every focus metric.
+    data: {
+      status: "completed",
+      endTime: cappedEndTime(existing.startTime, existing.duration),
+    },
   })
 }
 
