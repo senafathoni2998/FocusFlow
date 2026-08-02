@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "exclude": [
+    "node_modules",
+    ".next",
+    "src/__tests__",
+    "src/__mocks__",
+    "jest.config.js",
+    "jest.setup.js"
+  ]
+}
