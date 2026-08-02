@@ -1539,4 +1539,97 @@ describe("Chat API Route", () => {
       expect(data).not.toHaveProperty("recurrence")
     })
   })
+
+  describe("Committed mutations survive a failed follow-up", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+      mockGetTasks.mockResolvedValue([])
+    })
+
+    it("still reports success when the summarisation call throws", async () => {
+      // The mutation has already committed. A 500 here would drop functionCall,
+      // so ChatWidget never refreshes, the user never sees the change, and the
+      // retry re-applies a non-idempotent delta.
+      mockUpdateTask.mockResolvedValue({ success: true, task: { id: "task-123" } })
+      mockChatCreate
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{ id: "call_1", type: "function", function: {
+                name: "updateTask",
+                arguments: JSON.stringify({ id: "task-123", title: "Renamed" }),
+              } }],
+            },
+          }],
+        })
+        .mockRejectedValueOnce(new Error("429 rate limited"))
+
+      const response = await POST(await createRequest({ message: "rename it" }))
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(mockUpdateTask).toHaveBeenCalled()
+      expect(data.functionCall?.name).toBe("updateTask")
+      expect(data.message).toMatch(/applied/i)
+      expect(data.error).toBeUndefined()
+    })
+  })
+
+  describe("listTasks projection", () => {
+    beforeEach(() => {
+      mockAuth.mockResolvedValue({ user: { id: "user-123", name: "Test User" } })
+    })
+
+    it("projects task rows instead of dumping every column", async () => {
+      mockGetTasks.mockResolvedValue([
+        {
+          id: "task-1",
+          title: "Task 1",
+          status: "todo",
+          priority: "high",
+          dueDate: "2026-08-10",
+          description: "a very long note the model never needs",
+          tags: [{ id: "t1", name: "work" }],
+          recurrence: { freq: "daily" },
+          reminders: [{ id: "r1" }],
+          userId: "user-123",
+        },
+      ])
+      mockFunctionCall("listTasks", {})
+
+      const response = await POST(await createRequest({ message: "list my tasks" }))
+      const data = await response.json()
+
+      const [task] = data.functionCall.result
+      expect(task).toEqual({
+        id: "task-1",
+        title: "Task 1",
+        status: "todo",
+        priority: "high",
+        dueDate: "2026-08-10",
+      })
+      expect(task).not.toHaveProperty("description")
+      expect(task).not.toHaveProperty("tags")
+      expect(task).not.toHaveProperty("reminders")
+    })
+
+    it("caps the list and flags that it was truncated", async () => {
+      mockGetTasks.mockResolvedValue(
+        Array.from({ length: 250 }, (_, i) => ({
+          id: `task-${i}`,
+          title: `Task ${i}`,
+          status: "todo",
+          priority: "none",
+          dueDate: null,
+        })),
+      )
+      mockFunctionCall("listTasks", {})
+
+      const response = await POST(await createRequest({ message: "list my tasks" }))
+      const data = await response.json()
+
+      expect(data.functionCall.result).toHaveLength(200)
+    })
+  })
 })

@@ -710,10 +710,29 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
           );
           break;
 
-        case "listTasks":
-          const tasks = await getTasks();
-          pushFunctionResult({ tasks });
+        case "listTasks": {
+          // Reuse the tasks already fetched for context this request, and project
+          // them — the previous version re-queried and JSON.stringify'd every full
+          // Task row (all columns plus description, tags, recurrence, reminders)
+          // with no cap. At a few hundred tasks that alone overflowed the smallest
+          // provider context window, so the chat failed permanently for exactly the
+          // users with the most to manage. The sibling list tools already project.
+          const LIST_CAP = 200;
+          result = userTasks.slice(0, LIST_CAP).map((t: any) => ({
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            priority: t.priority,
+            dueDate: t.dueDate ?? null,
+          }));
+          pushFunctionResult({
+            tasks: result,
+            ...(userTasks.length > LIST_CAP
+              ? { truncated: true, totalCount: userTasks.length }
+              : {}),
+          });
           break;
+        }
 
         // ---- Goals ----
         case "createGoal":
@@ -845,15 +864,28 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
       }
 
       // Get final response from the provider with the tool results.
-      const finalResponse = await ai.client.chat.completions.create({
-        model: ai.chatModel,
-        messages: followUpMessages,
-        temperature: 0.3,
-        max_tokens: 1024,
-      });
-
-      const finalMessage =
-        finalResponse.choices[0]?.message?.content || "Done!";
+      //
+      // The mutation above has ALREADY COMMITTED. If this summarisation call throws
+      // (provider 429, a one-second uplink drop), letting it reach the outer catch
+      // would return a generic 500 and drop `functionCall` — so ChatWidget never
+      // calls router.refresh(), the user never sees the change, retries the same
+      // request, and non-idempotent tools apply twice: adjustGoalProgress and
+      // checkInHabit are deltas, and createTask has no unique constraint.
+      // Report success with a fallback message instead.
+      let finalMessage: string;
+      try {
+        const finalResponse = await ai.client.chat.completions.create({
+          model: ai.chatModel,
+          messages: followUpMessages,
+          temperature: 0.3,
+          max_tokens: 1024,
+        });
+        finalMessage = finalResponse.choices[0]?.message?.content || "Done!";
+      } catch (summaryError) {
+        console.error("[Chat API] Follow-up summarisation failed:", summaryError);
+        finalMessage =
+          "Done — the change was applied. (I couldn't write a summary just now, so no need to ask again.)";
+      }
 
       return NextResponse.json({
         message: finalMessage,

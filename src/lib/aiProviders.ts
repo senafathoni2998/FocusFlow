@@ -156,6 +156,12 @@ export function getAIClient(preferred?: string | null): ResolvedAIClient | null 
   const client = new OpenAI({
     apiKey: apiKeyFor(def),
     ...(def.baseURL ? { baseURL: def.baseURL } : {}),
+    // The SDK defaults to a 600s timeout with 2 retries, and it retries the
+    // timeout itself — a stalled provider connection locked the chat widget
+    // (textarea and send button disabled, no cancel) for up to an hour, and a
+    // single chat turn makes two sequential calls.
+    timeout: 60_000,
+    maxRetries: 1,
   })
 
   return {
