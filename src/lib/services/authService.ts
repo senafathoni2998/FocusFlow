@@ -3,6 +3,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { ApiError, badRequest, unauthorized } from "@/lib/apiResponse"
 import { issueTokens, verifyRefreshToken } from "@/lib/apiAuth"
+import { findUserByEmail, normalizeEmail } from "@/lib/email"
 
 /**
  * Auth for the mobile API: register + login return a bearer token pair; refresh
@@ -16,13 +17,13 @@ import { issueTokens, verifyRefreshToken } from "@/lib/apiAuth"
 const DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 const credentialsSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(6),
   name: z.string().max(100).optional(),
 })
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(1),
 })
 
@@ -31,9 +32,12 @@ function publicUser(user: { id: string; email: string; name: string | null }) {
 }
 
 export async function registerUser(input: unknown) {
-  const { email, password, name } = credentialsSchema.parse(input)
+  const { email: rawEmail, password, name } = credentialsSchema.parse(input)
+  // Stored canonically, and the duplicate check ignores case — otherwise
+  // `Sena@Gmail.com` and `sena@gmail.com` become two separate accounts.
+  const email = normalizeEmail(rawEmail)
 
-  const existing = await prisma.user.findUnique({ where: { email } })
+  const existing = await findUserByEmail(email)
   if (existing) {
     throw new ApiError(409, "A user with that email already exists")
   }
@@ -51,7 +55,7 @@ export async function registerUser(input: unknown) {
 export async function loginUser(input: unknown) {
   const { email, password } = loginSchema.parse(input)
 
-  const user = await prisma.user.findUnique({ where: { email } })
+  const user = await findUserByEmail(email)
   // Uniform error AND uniform timing: spend the bcrypt cost even when the email is
   // unknown, so response time doesn't reveal whether the account exists.
   if (!user) {

@@ -35,7 +35,7 @@ declare global {
   // eslint-disable-next-line no-var
   var __mockPrismaClient: {
     user: {
-      findUnique: jest.Mock
+      findFirst: jest.Mock
       create: jest.Mock
       update: jest.Mock
     }
@@ -45,7 +45,7 @@ declare global {
       delete: jest.Mock
       findMany: jest.Mock
       findFirst: jest.Mock
-      findUnique: jest.Mock
+      findFirst: jest.Mock
     }
     focusSession: {
       create: jest.Mock
@@ -72,7 +72,7 @@ describe("Signup API Route", () => {
   // Set up default mock behaviors before each test
   beforeEach(() => {
     jest.clearAllMocks()
-    global.__mockPrismaClient.user.findUnique.mockResolvedValue(null)
+    global.__mockPrismaClient.user.findFirst.mockResolvedValue(null)
     global.__mockPrismaClient.user.create.mockResolvedValue({
       id: "user-123",
       email: "test@example.com",
@@ -96,8 +96,10 @@ describe("Signup API Route", () => {
       expect(response.status).toBe(201)
       expect(data.message).toBe("User created successfully")
       expect(data.userId).toBe("user-123")
-      expect(global.__mockPrismaClient.user.findUnique).toHaveBeenCalledWith({
-        where: { email: "test@example.com" }
+      // Duplicate check ignores case, so `Test@Example.com` can't create a second
+      // account alongside `test@example.com`.
+      expect(global.__mockPrismaClient.user.findFirst).toHaveBeenCalledWith({
+        where: { email: { equals: "test@example.com", mode: "insensitive" } }
       })
       expect(global.__mockPrismaClient.user.create).toHaveBeenCalledWith({
         data: {
@@ -226,7 +228,7 @@ describe("Signup API Route", () => {
 
   describe("Duplicate User Handling", () => {
     it("should return error when user already exists", async () => {
-      global.__mockPrismaClient.user.findUnique.mockResolvedValueOnce({
+      global.__mockPrismaClient.user.findFirst.mockResolvedValueOnce({
         id: "user-123",
         email: "existing@example.com",
         name: "Test User",

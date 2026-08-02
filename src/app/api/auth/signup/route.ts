@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { hash } from "bcryptjs"
 import { prisma } from "@/lib/prisma"
+import { findUserByEmail, normalizeEmail } from "@/lib/email"
 import { z } from "zod"
 
 const signupSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(6),
   name: z.string().optional()
 })
@@ -12,12 +13,13 @@ const signupSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { email, password, name } = signupSchema.parse(body)
+    const { email: rawEmail, password, name } = signupSchema.parse(body)
+    // Canonical on write, case-insensitive on the duplicate check — email is a
+    // case-insensitive identifier but User.email is a case-sensitive column.
+    const email = normalizeEmail(rawEmail)
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
+    const existingUser = await findUserByEmail(email)
 
     if (existingUser) {
       return NextResponse.json(

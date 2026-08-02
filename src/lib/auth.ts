@@ -1,7 +1,7 @@
 import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
-import { prisma } from "./prisma"
+import { findUserByEmail } from "./email"
 import { z } from "zod"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -13,16 +13,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       authorize: async (credentials) => {
         const parsedCredentials = z
-          .object({ email: z.string().email(), password: z.string().min(6) })
+          .object({ email: z.string().trim().email(), password: z.string().min(6) })
           .safeParse(credentials)
 
         if (!parsedCredentials.success) return null
 
         const { email, password } = parsedCredentials.data
 
-        const user = await prisma.user.findUnique({
-          where: { email }
-        })
+        // Case-insensitive: the address the user types is not guaranteed to match
+        // the case stored at signup.
+        const user = await findUserByEmail(email)
 
         if (!user) return null
 
