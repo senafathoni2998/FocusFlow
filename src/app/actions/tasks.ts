@@ -683,6 +683,16 @@ export async function reorderTask(data: {
     return { error: "Unauthorized" }
   }
 
+  // Task.status is an unconstrained String column and this is a public action, so
+  // an unvalidated newStatus would write an arbitrary value that no view groups or
+  // renders. The mobile API's reorderTask already enforced this via zod.
+  if (!TASK_STATUSES.includes(data.newStatus as never)) {
+    return { error: "Invalid status" }
+  }
+  if (!Number.isInteger(data.newOrder)) {
+    return { error: "Invalid order" }
+  }
+
   try {
     // Verify task ownership
     const existingTask = await prisma.task.findFirst({

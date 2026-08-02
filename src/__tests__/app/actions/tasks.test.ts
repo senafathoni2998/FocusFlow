@@ -988,13 +988,13 @@ describe("Task Actions", () => {
       })
       mockPrisma.task.update.mockResolvedValue({
         id: "task-1",
-        status: "done",
+        status: "in-progress",
         order: 2
       })
 
       await reorderTask({
         id: "task-1",
-        newStatus: "done",
+        newStatus: "in-progress",
         newOrder: 2
       })
 
@@ -1027,23 +1027,44 @@ describe("Task Actions", () => {
       })
       mockPrisma.task.update.mockResolvedValue({
         id: "task-1",
-        status: "done"
+        status: "in-progress"
       })
 
       await reorderTask({
         id: "task-1",
-        newStatus: "done",
+        newStatus: "in-progress",
         newOrder: 0
       })
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: "task-1" },
         data: {
-          status: "done",
+          status: "in-progress",
           order: 0,
           completedAt: null
         }
       })
+    })
+
+    it("rejects a status outside TASK_STATUSES", async () => {
+      // Task.status is an unconstrained String column and reorderTask is a public
+      // action, so an arbitrary value used to land in the database and then belong
+      // to no board column, no filter and no smart list.
+      mockAuth.mockResolvedValue(mockSession)
+
+      const result = await reorderTask({ id: "task-1", newStatus: "done", newOrder: 0 })
+
+      expect(result).toEqual({ error: "Invalid status" })
+      expect(mockPrisma.task.update).not.toHaveBeenCalled()
+    })
+
+    it("rejects a non-integer order", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+
+      const result = await reorderTask({ id: "task-1", newStatus: "todo", newOrder: 1.5 })
+
+      expect(result).toEqual({ error: "Invalid order" })
+      expect(mockPrisma.task.update).not.toHaveBeenCalled()
     })
   })
 
