@@ -104,7 +104,7 @@ export default function PomodoroTimer() {
     setStatus("idle")
 
     if (currentSessionId) {
-      await completeSession(currentSessionId, new Date())
+      await completeSession(currentSessionId)
     }
 
     setCurrentSessionId(null)

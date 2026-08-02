@@ -847,17 +847,22 @@ describe("Task Actions", () => {
       })
     })
 
-    it("should use provided userId directly", async () => {
+    it("always scopes to the session user and never to a caller-supplied id", async () => {
+      // Regression: getTasks used to accept an optional `userId` and skip auth()
+      // when it was supplied. Because this module is "use server", that made it a
+      // public endpoint that would return any user's tasks for a guessed id.
       const tasks = [
-        { id: "task-1", userId: "custom-user", title: "Task 1", tags: [] }
+        { id: "task-1", userId: "user-123", title: "Task 1", tags: [] }
       ]
       mockPrisma.task.findMany.mockResolvedValue(tasks)
 
-      const result = await getTasks("custom-user")
+      // A caller-supplied argument must be inert: the signature takes none, and
+      // an extra positional arg sent over the wire cannot influence the scope.
+      const result = await (getTasks as unknown as (u?: string) => Promise<unknown[]>)("custom-user")
 
-      expect(mockAuth).not.toHaveBeenCalled()
+      expect(mockAuth).toHaveBeenCalled()
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
-        where: { userId: "custom-user" },
+        where: { userId: "user-123" },
         orderBy: [{ order: "asc" }, { createdAt: "desc" }],
         include: {
           tags: { include: { tag: true } },
@@ -866,6 +871,15 @@ describe("Task Actions", () => {
         }
       })
       expect(result).toEqual(tasks.map((t) => ({ ...t, actualMin: 0 })))
+    })
+
+    it("returns an empty list when there is no session", async () => {
+      mockAuth.mockResolvedValue(null)
+
+      const result = await getTasks()
+
+      expect(result).toEqual([])
+      expect(mockPrisma.task.findMany).not.toHaveBeenCalled()
     })
 
     it("should return empty array on error", async () => {

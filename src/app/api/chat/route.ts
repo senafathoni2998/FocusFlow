@@ -324,6 +324,44 @@ const functions = [
   },
 ];
 
+/**
+ * Keep only the keys a tool actually declares.
+ *
+ * Tool arguments are model output, not user input, and nothing forces a model to
+ * stay inside the declared schema. `updateTask` treats `tags`/`reminders` as a
+ * FULL REPLACE, so a single hallucinated `"tags": []` on an unrelated edit ("rename
+ * this task") would silently wipe every tag — and `"reminders": []` every reminder —
+ * on that task. Projecting through the declared field list makes an invented key
+ * unable to reach the action at all.
+ */
+function pickDeclared<T extends string>(
+  args: Record<string, unknown>,
+  fields: readonly T[],
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (args[f] !== undefined) out[f] = args[f];
+  }
+  return out;
+}
+
+// Mirrors the `properties` of each tool's schema above (minus `id`, passed separately).
+const UPDATE_TASK_FIELDS = [
+  "title",
+  "description",
+  "status",
+  "priority",
+  "dueDate",
+] as const;
+
+const CREATE_TASK_FIELDS = [
+  "title",
+  "description",
+  "priority",
+  "dueDate",
+  "tags",
+] as const;
+
 // Wrap the function definitions in the modern `tools` shape. Unlike the legacy
 // `functions`/`function_call` params, `tools`/`tool_calls` is accepted by every
 // provider's OpenAI-compatible endpoint (OpenAI, Groq, DeepSeek, Gemini, Claude).
@@ -461,11 +499,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Fetch all four pillars for context. getGoals/getHabits/getDueReminders are
-    // session-scoped (no userId param), so they can't be coaxed into an IDOR the
-    // way the older getTasks(userId) signature can.
+    // Fetch all four pillars for context. All four are session-scoped (they take
+    // no userId param), so none of them can be coaxed into an IDOR.
     const [userTasks, userGoals, userHabits, dueReminders] = await Promise.all([
-      getTasks(session.user.id),
+      getTasks(),
       getGoals(),
       getHabits(),
       getDueReminders(),
@@ -603,7 +640,9 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
 
       switch (functionName) {
         case "createTask":
-          result = await createTask(functionArgs as any);
+          result = await createTask(
+            pickDeclared(functionArgs, CREATE_TASK_FIELDS) as any,
+          );
           pushFunctionResult(
             result.error
               ? { error: result.error }
@@ -644,7 +683,7 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
           } else {
             result = await updateTask(
               functionArgs.id as string,
-              functionArgs as any,
+              pickDeclared(functionArgs, UPDATE_TASK_FIELDS),
             );
             pushFunctionResult(
               result.error
@@ -672,7 +711,7 @@ Current user context:${taskContext}${goalContext}${habitContext}${reminderContex
           break;
 
         case "listTasks":
-          const tasks = await getTasks(session.user.id);
+          const tasks = await getTasks();
           pushFunctionResult({ tasks });
           break;
 

@@ -603,15 +603,13 @@ export async function completeTask(id: string) {
   }
 }
 
-export async function getTasks(userId?: string) {
-  // If userId is provided, use it directly (for API routes)
-  // Otherwise, get session (for Server Actions)
-  let targetUserId = userId
-
-  if (!targetUserId) {
-    const session = await auth()
-    targetUserId = session?.user?.id
-  }
+export async function getTasks() {
+  // Every export in this file is a "use server" action, i.e. a publicly callable
+  // endpoint. The user is therefore ALWAYS derived from the session here — an
+  // earlier signature took an optional `userId` and skipped `auth()` when it was
+  // supplied, which let an unauthenticated caller read any user's tasks.
+  const session = await auth()
+  const targetUserId = session?.user?.id
 
   if (!targetUserId) {
     return []

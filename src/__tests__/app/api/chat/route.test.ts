@@ -524,7 +524,6 @@ describe("Chat API Route", () => {
       const data = await response.json()
 
       expect(mockUpdateTask).toHaveBeenCalledWith("task-123", {
-        id: "task-123",
         status: "in-progress",
         priority: "high",
       })
@@ -720,7 +719,9 @@ describe("Chat API Route", () => {
       const response = await POST(request)
       const data = await response.json()
 
-      expect(mockGetTasks).toHaveBeenCalledWith("user-123")
+      // Session-scoped: getTasks takes no userId argument (it derives the user
+      // from auth() itself), so there is no id for a caller to substitute.
+      expect(mockGetTasks).toHaveBeenCalledWith()
       expect(data.functionCall?.name).toBe("listTasks")
     })
   })
@@ -1511,9 +1512,31 @@ describe("Chat API Route", () => {
       await POST(await createRequest({ message: "skip Existing Task" }))
 
       expect(mockUpdateTask).toHaveBeenCalledWith("task-123", {
-        id: "task-123",
         status: "wont-do",
       })
+    })
+
+    it("drops tool-call keys the updateTask schema never declared", async () => {
+      // updateTask treats `tags`/`reminders` as a FULL REPLACE, so a hallucinated
+      // empty array on an unrelated rename would wipe every tag/reminder on the
+      // task. Undeclared keys must never reach the action.
+      mockFunctionCall("updateTask", {
+        id: "task-123",
+        title: "Renamed",
+        tags: [],
+        reminders: [],
+        listId: "some-other-list",
+        recurrence: null,
+      })
+
+      await POST(await createRequest({ message: "rename Existing Task to Renamed" }))
+
+      expect(mockUpdateTask).toHaveBeenCalledWith("task-123", { title: "Renamed" })
+      const [, data] = mockUpdateTask.mock.calls.at(-1)!
+      expect(data).not.toHaveProperty("tags")
+      expect(data).not.toHaveProperty("reminders")
+      expect(data).not.toHaveProperty("listId")
+      expect(data).not.toHaveProperty("recurrence")
     })
   })
 })
