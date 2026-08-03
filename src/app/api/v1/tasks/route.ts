@@ -1,5 +1,6 @@
 import { handleRoute, ok, readJson } from "@/lib/apiResponse"
 import { requireApiUser } from "@/lib/apiAuth"
+import { withIdempotency } from "@/lib/idempotency"
 import { listTasks, createTask } from "@/lib/services/taskService"
 
 export const runtime = "nodejs"
@@ -14,5 +15,7 @@ export const GET = handleRoute(async (req) => {
 export const POST = handleRoute(async (req) => {
   const userId = await requireApiUser(req)
   const body = await readJson(req)
-  return ok({ task: await createTask(userId, body) }, 201)
+  return withIdempotency(req, userId, "tasks", body, async () =>
+    ok({ task: await createTask(userId, body) }, 201),
+  )
 })

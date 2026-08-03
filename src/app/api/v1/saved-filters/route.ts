@@ -1,5 +1,6 @@
 import { handleRoute, ok, readJson } from "@/lib/apiResponse"
 import { requireApiUser } from "@/lib/apiAuth"
+import { withIdempotency } from "@/lib/idempotency"
 import { createSavedFilter, getSavedFilters } from "@/lib/services/savedFilterService"
 
 export const runtime = "nodejs"
@@ -14,5 +15,7 @@ export const GET = handleRoute(async (req) => {
 export const POST = handleRoute(async (req) => {
   const userId = await requireApiUser(req)
   const body = await readJson(req)
-  return ok({ savedFilter: await createSavedFilter(userId, body) }, 201)
+  return withIdempotency(req, userId, "saved-filters", body, async () =>
+    ok({ savedFilter: await createSavedFilter(userId, body) }, 201),
+  )
 })

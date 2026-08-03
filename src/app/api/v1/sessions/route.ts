@@ -1,5 +1,6 @@
 import { badRequest, handleRoute, ok, readJson } from "@/lib/apiResponse"
 import { requireApiUser } from "@/lib/apiAuth"
+import { withIdempotency } from "@/lib/idempotency"
 import { getUserSessions, startSession, MAX_SESSION_DAYS } from "@/lib/services/sessionService"
 
 export const runtime = "nodejs"
@@ -27,5 +28,7 @@ export const GET = handleRoute(async (req) => {
 export const POST = handleRoute(async (req) => {
   const userId = await requireApiUser(req)
   const body = await readJson(req)
-  return ok({ session: await startSession(userId, body) }, 201)
+  return withIdempotency(req, userId, "sessions", body, async () =>
+    ok({ session: await startSession(userId, body) }, 201),
+  )
 })
