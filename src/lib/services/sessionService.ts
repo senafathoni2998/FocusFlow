@@ -52,7 +52,12 @@ export async function cancelSession(userId: string, id: string) {
   if (!existing) throw notFound("Session not found")
   await prisma.focusSession.update({
     where: { id },
-    data: { status: "cancelled", endTime: new Date() },
+    // Same clamp as completeSession. A device that sleeps mid-timer and cancels
+    // on wake would otherwise persist a multi-hour span for a 25-minute session.
+    // Cancelled rows are excluded from focus metrics today, so nothing is
+    // currently wrong downstream — but storing a duration that never happened
+    // is a trap for the first query that stops filtering on status.
+    data: { status: "cancelled", endTime: cappedEndTime(existing.startTime, existing.duration) },
   })
   return { success: true }
 }

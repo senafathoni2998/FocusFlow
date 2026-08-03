@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
+import { dueReminderWhere, DUE_REMINDER_TAKE } from "@/lib/reminderWindow"
 
 /**
  * Reminder dispatch queries. The in-app ReminderDispatcher (a client component
@@ -18,23 +19,14 @@ export async function getDueReminders() {
   if (!userId) return []
 
   try {
-    // Bounded on both ends. The query had no `take` and no lower bound, so two
-    // weeks of missed reminders were all claimed in a single poll — a burst of OS
-    // notifications and a banner stack taller than the viewport (the container is
-    // bottom-anchored and fixed, so the topmost ones were clipped off-screen and
-    // could not be read or dismissed). A reminder more than a day stale is noise
-    // rather than a reminder; it stays undispatched instead of arriving late.
-    const now = new Date()
-    const staleCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    // Bounds live in lib/reminderWindow.ts so this and the mobile service cannot
+    // drift again — they already had, and the unbounded copy was the one the
+    // Android notification poller called.
     return await prisma.reminder.findMany({
-      where: {
-        userId,
-        dispatchedAt: null,
-        triggerAt: { lte: now, gte: staleCutoff },
-      },
+      where: dueReminderWhere(userId),
       orderBy: { triggerAt: "asc" },
       include: { task: { select: { id: true, title: true } } },
-      take: 5,
+      take: DUE_REMINDER_TAKE,
     })
   } catch {
     return []

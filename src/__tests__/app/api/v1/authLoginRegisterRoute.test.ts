@@ -155,18 +155,63 @@ describe("POST /api/v1/auth/login", () => {
     expect(res.status).toBe(200)
   })
 
-  it("counts SUCCESSFUL logins against the per-account bucket too (current behaviour)", async () => {
-    // Documenting, not endorsing: the limiter runs before loginUser and never learns
-    // the outcome, so ten good logins lock the account out for the rest of the window.
-    // See suspectedDefects — this is remotely triggerable against a known email.
+  it("never throttles an account on its own successful logins", async () => {
+    // The per-account bucket counts FAILURES only and is cleared on success.
+    // Charging it up front made it an account-lockout weapon: anyone who knew the
+    // address could spend the quota from arbitrary IPs and leave the real owner
+    // facing 429 with the correct password.
     ;(loginUser as jest.Mock).mockResolvedValue(TOKENS)
 
-    for (let i = 0; i < LOGIN_LIMIT.limit; i++) {
-      const res = await LOGIN(req({ ip: `10.3.0.${i}`, body: { email: "sena@gmail.com", password: "secret123" } }), ctx)
+    for (let i = 0; i < LOGIN_LIMIT.limit * 2; i++) {
+      const res = await LOGIN(
+        req({ ip: `10.3.0.${i}`, body: { email: "sena@gmail.com", password: "secret123" } }),
+        ctx,
+      )
       expect(res.status).toBe(200)
     }
+  })
 
-    const blocked = await LOGIN(req({ ip: "10.3.9.9", body: { email: "sena@gmail.com", password: "secret123" } }), ctx)
+  it("a stranger's failed guesses cannot lock the owner out once they succeed", async () => {
+    // Nine wrong guesses (one short of the limit), then the owner's correct
+    // password gets through AND resets the counter.
+    ;(loginUser as jest.Mock).mockRejectedValue(new ApiError(401, "Invalid email or password"))
+    for (let i = 0; i < LOGIN_LIMIT.limit - 1; i++) {
+      await LOGIN(req({ ip: `10.4.0.${i}`, body: { email: "sena@gmail.com", password: "guess" } }), ctx)
+    }
+
+    ;(loginUser as jest.Mock).mockResolvedValue(TOKENS)
+    const owner = await LOGIN(
+      req({ ip: "10.4.9.9", body: { email: "sena@gmail.com", password: "secret123" } }),
+      ctx,
+    )
+    expect(owner.status).toBe(200)
+
+    // Counter cleared, so the next wrong guesses start from zero again.
+    ;(loginUser as jest.Mock).mockRejectedValue(new ApiError(401, "Invalid email or password"))
+    const afterReset = await LOGIN(
+      req({ ip: "10.4.9.8", body: { email: "sena@gmail.com", password: "guess" } }),
+      ctx,
+    )
+    expect(afterReset.status).toBe(401)
+  })
+
+  it("still throttles sustained failures against one account across many IPs", async () => {
+    // The whole point of the per-account bucket: an IP bucket alone would miss a
+    // distributed guessing run because each source gets its own allowance.
+    ;(loginUser as jest.Mock).mockRejectedValue(new ApiError(401, "Invalid email or password"))
+
+    for (let i = 0; i < LOGIN_LIMIT.limit; i++) {
+      const res = await LOGIN(
+        req({ ip: `10.5.0.${i}`, body: { email: "sena@gmail.com", password: "guess" } }),
+        ctx,
+      )
+      expect(res.status).toBe(401)
+    }
+
+    const blocked = await LOGIN(
+      req({ ip: "10.5.9.9", body: { email: "sena@gmail.com", password: "guess" } }),
+      ctx,
+    )
     expect(blocked.status).toBe(429)
   })
 

@@ -77,6 +77,37 @@ export function rateLimit(
   return { allowed: true, retryAfter: 0, remaining: limit - existing.count }
 }
 
+/**
+ * Read a bucket WITHOUT consuming from it.
+ *
+ * Needed wherever the decision to charge an attempt depends on its outcome —
+ * see the login route, where only failures may count against the per-account
+ * bucket.
+ */
+export function peekRateLimit(
+  key: string,
+  { limit }: { limit: number; windowMs: number },
+  now: number = Date.now(),
+): RateLimitResult {
+  const existing = buckets.get(key)
+  if (!existing || existing.resetAt <= now) {
+    return { allowed: true, retryAfter: 0, remaining: limit }
+  }
+  if (existing.count >= limit) {
+    return {
+      allowed: false,
+      retryAfter: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+      remaining: 0,
+    }
+  }
+  return { allowed: true, retryAfter: 0, remaining: limit - existing.count }
+}
+
+/** Forget a bucket — e.g. a successful login clearing its own failure count. */
+export function clearRateLimit(key: string) {
+  buckets.delete(key)
+}
+
 /** Test seam — also useful if you ever add an admin "unblock me" action. */
 export function resetRateLimits() {
   buckets.clear()
