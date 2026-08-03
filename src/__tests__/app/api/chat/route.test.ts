@@ -785,7 +785,10 @@ describe("Chat API Route", () => {
       expect(data.message).toContain("not sure how to help")
     })
 
-    it("should handle malformed JSON in request body", async () => {
+    it("answers 400 for a body the server cannot parse", async () => {
+      // It is the caller's mistake, not the server's. Answering 500 told a client
+      // with a broken payload that the SERVER had failed, making "retry the same
+      // broken request" the sensible reaction instead of "fix it".
       const request = {
         json: async () => {
           throw new Error("Invalid JSON")
@@ -795,8 +798,8 @@ describe("Chat API Route", () => {
       const response = await POST(request)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
-      expect(data.error).toBe("Failed to process chat message")
+      expect(response.status).toBe(400)
+      expect(data.error).toBe("Invalid request body")
     })
   })
 
