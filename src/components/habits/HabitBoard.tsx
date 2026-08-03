@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { Habit } from "@/types/habit"
-import { checkInHabit, deleteHabit } from "@/app/actions/habits"
+import { archiveHabit, checkInHabit, deleteHabit, getArchivedHabits } from "@/app/actions/habits"
 import HabitRow from "./HabitRow"
 import HabitForm from "./HabitForm"
 import HabitDetail from "./HabitDetail"
@@ -25,8 +25,42 @@ export default function HabitBoard({ habits }: { habits: Habit[] }) {
   const [editing, setEditing] = useState<Habit | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [detailHabit, setDetailHabit] = useState<Habit | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [archivedHabits, setArchivedHabits] = useState<Habit[]>([])
 
   useEffect(() => setLocalHabits(habits), [habits])
+
+  // Load the archived list when the section opens, and refresh it whenever the
+  // active list changes — a habit just archived has to leave one and join the
+  // other without a reload.
+  useEffect(() => {
+    if (!showArchived) return
+    let cancelled = false
+    getArchivedHabits().then((h) => {
+      if (!cancelled) setArchivedHabits(h as Habit[])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showArchived, localHabits])
+
+  const handleRestore = useCallback(
+    async (habitId: string) => {
+      setBusyId(habitId)
+      try {
+        const res = await archiveHabit(habitId, false)
+        if (res?.error) {
+          alert(res.error)
+          return
+        }
+        setArchivedHabits((prev) => prev.filter((h) => h.id !== habitId))
+        router.refresh()
+      } finally {
+        setBusyId(null)
+      }
+    },
+    [router]
+  )
 
   // Keep an open detail panel's habit fresh (so its heatmap/stats reflect a
   // check-in made behind it); close it if the habit is gone.
@@ -118,6 +152,48 @@ export default function HabitBoard({ habits }: { habits: Habit[] }) {
           ))}
         </div>
       )}
+
+      {/* Archiving used to be a one-way trip from the UI: archiveHabit has always
+          accepted `archived: false`, but nothing could LIST an archived habit, so
+          the only way back was knowing its id. Goals already had this section. */}
+      <div className="pt-4">
+        <button
+          type="button"
+          onClick={() => setShowArchived((s) => !s)}
+          className="text-sm text-gray-500 hover:text-gray-700"
+        >
+          {showArchived ? "Hide archived" : "Show archived"}
+        </button>
+
+        {showArchived &&
+          (archivedHabits.length === 0 ? (
+            <p className="text-sm text-gray-400 mt-2">No archived habits.</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {archivedHabits.map((h) => (
+                <div
+                  key={h.id}
+                  className="flex items-center gap-3 bg-gray-50 rounded-lg border border-gray-200 p-3"
+                >
+                  <span className="text-xl" aria-hidden="true">
+                    {h.icon}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-700 truncate">{h.name}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRestore(h.id)}
+                    disabled={busyId === h.id}
+                    className="text-sm text-primary-600 hover:text-primary-800 disabled:opacity-50"
+                  >
+                    {busyId === h.id ? "Restoring…" : "Restore"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ))}
+      </div>
 
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">

@@ -58,6 +58,33 @@ export async function getHabits() {
   }
 }
 
+/**
+ * Archived habits, for the "Show archived" section.
+ *
+ * archiveHabit already accepted `archived: false` — unarchiving worked all along
+ * — but nothing could LIST an archived habit, so from the UI archiving was a
+ * one-way trip and the only way back was knowing the id. Goals already had this
+ * (getArchivedGoals); habits did not.
+ *
+ * Check-ins come along so the restored card can render its streak immediately,
+ * matching getHabits.
+ */
+export async function getArchivedHabits() {
+  const session = await auth()
+  const userId = session?.user?.id
+  if (!userId) return []
+
+  try {
+    return await prisma.habit.findMany({
+      where: { userId, archived: true },
+      orderBy: [{ updatedAt: "desc" }],
+      include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
+    })
+  } catch {
+    return []
+  }
+}
+
 export async function createHabit(data: {
   name: string
   icon?: string

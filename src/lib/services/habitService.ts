@@ -38,10 +38,27 @@ function toCheckInDate(dateStr?: string): Date {
   return new Date(Date.UTC(y, mo - 1, d))
 }
 
+/**
+ * Archived habits, mirroring getArchivedGoals.
+ *
+ * archiveHabit already accepted `archived: false`, so unarchiving worked — but
+ * nothing could LIST an archived habit, which made archiving a one-way trip from
+ * either client. Goals had `/goals/archived`; habits had no equivalent.
+ */
+export async function getArchivedHabits(userId: string) {
+  return listHabits(userId, true)
+}
+
 export async function getHabits(userId: string) {
+  return listHabits(userId, false)
+}
+
+async function listHabits(userId: string, archived: boolean) {
   const habits = await prisma.habit.findMany({
-    where: { userId, archived: false },
-    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    where: { userId, archived },
+    orderBy: archived
+      ? [{ updatedAt: "desc" }]
+      : [{ order: "asc" }, { createdAt: "asc" }],
     include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
   })
   // checkIns are needed to compute the stats but must NOT be spread into the
