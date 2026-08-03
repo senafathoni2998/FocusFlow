@@ -81,14 +81,19 @@ describe("listService.createList", () => {
     expect(prisma.list.create).not.toHaveBeenCalled()
   })
 
-  it("currently persists a whitespace-only name verbatim, unlike updateList which trims", async () => {
-    // Documented as current behaviour, not endorsed: `.min(1)` passes "   " and
-    // createList never trims, so a blank-labelled list is creatable via the API.
+  it("rejects a whitespace-only name instead of persisting a blank label", async () => {
+    // `.min(1)` alone passes "   ", so the schema trims FIRST — create and update
+    // now agree, where create used to accept exactly what update rejected.
+    await expect(createList("u1", { name: "   " })).rejects.toBeDefined()
+    expect(prisma.list.create).not.toHaveBeenCalled()
+  })
+
+  it("stores the trimmed name", async () => {
     prisma.list.create.mockResolvedValue({ id: "l1" })
 
-    await createList("u1", { name: "   " })
+    await createList("u1", { name: "  Work  " })
 
-    expect(prisma.list.create.mock.calls[0][0].data.name).toBe("   ")
+    expect(prisma.list.create.mock.calls[0][0].data.name).toBe("Work")
   })
 })
 
@@ -115,10 +120,10 @@ describe("listService.updateList", () => {
     expect(prisma.list.update).toHaveBeenCalledWith({ where: { id: "l1" }, data: { name: "Work" } })
   })
 
-  it("400s a whitespace-only name, which the schema's min(1) alone would let through", async () => {
+  it("rejects a whitespace-only name before it can blank an existing list", async () => {
     prisma.list.findFirst.mockResolvedValue({ id: "l1" })
 
-    await expect(updateList("u1", "l1", { name: "   " })).rejects.toMatchObject({ status: 400 })
+    await expect(updateList("u1", "l1", { name: "   " })).rejects.toBeDefined()
     expect(prisma.list.update).not.toHaveBeenCalled()
   })
 

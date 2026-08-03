@@ -144,7 +144,10 @@ describe("analyticsService.getDashboard — completion windows", () => {
    * (`completed` and `wont-do`). So abandoning a task increments the "completed"
    * numbers. Reported as a suspected defect rather than fixed here.
    */
-  it("currently counts abandoned 'wont-do' tasks as completions because they carry a completedAt", async () => {
+  it("does not count abandoned 'wont-do' tasks as completions", async () => {
+    // Both write paths stamp completedAt for ANY terminal status, and
+    // TERMINAL_STATUSES includes "wont-do" — so keying off completedAt alone
+    // made the dashboard reward giving up on a task.
     arrange([
       { status: "wont-do", dueDate: null, completedAt: new Date(2026, 7, 3, 10, 0) },
       { status: "completed", dueDate: null, completedAt: new Date(2026, 7, 3, 10, 0) },
@@ -152,9 +155,9 @@ describe("analyticsService.getDashboard — completion windows", () => {
 
     const { tasks } = await getDashboard("u1")
 
-    expect(tasks.completedToday).toBe(2)
-    expect(tasks.completedThisWeek).toBe(2)
-    // ...even though the status breakdown correctly reports only one completion.
+    expect(tasks.completedToday).toBe(1)
+    expect(tasks.completedThisWeek).toBe(1)
+    // Which now agrees with the status breakdown instead of contradicting it.
     expect(tasks.byStatus.completed).toBe(1)
   })
 

@@ -7,8 +7,6 @@ export const runtime = "nodejs"
 
 /** POST /api/v1/auth/login — verify credentials, return the bearer token pair. */
 export const POST = handleRoute(async (req) => {
-  const body = await readJson(req)
-
   // Two buckets, charged differently — and the difference matters.
   //
   // The per-IP bucket counts EVERY attempt: it limits one host's throughput, and
@@ -20,8 +18,14 @@ export const POST = handleRoute(async (req) => {
   // real owner facing 429 for fifteen minutes with the correct password. A
   // counter that only advances on failure still stops guessing, without handing
   // an unauthenticated stranger a denial-of-service against a known email.
+  //
+  // Charged BEFORE the body is parsed, matching register. Parsing first meant a
+  // flood of malformed requests cost the sender nothing while still occupying
+  // the server.
   const ip = rateLimit(`login:ip:${clientKey(req)}`, LOGIN_LIMIT)
   if (!ip.allowed) throw tooManyRequests(ip.retryAfter)
+
+  const body = await readJson(req)
 
   const rawEmail = (body as { email?: unknown })?.email
   const acctKey =

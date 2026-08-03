@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { notFound } from "@/lib/apiResponse"
+import { ApiError, notFound } from "@/lib/apiResponse"
 import { cappedEndTime } from "@/lib/sessionTiming"
 
 /**
@@ -36,6 +36,14 @@ export async function startSession(userId: string, input: unknown) {
 export async function completeSession(userId: string, id: string) {
   const existing = await prisma.focusSession.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Session not found")
+  // Only a RUNNING session can be completed. Without this, completing an already
+  // cancelled session flipped it to "completed" and stamped an endTime — and
+  // focus metrics filter on status "completed", so a session the user explicitly
+  // abandoned started counting as focus time. Re-completing a finished one also
+  // re-derived its endTime on every call.
+  if (existing.status !== "running") {
+    throw new ApiError(409, "Session is not running")
+  }
   return prisma.focusSession.update({
     where: { id },
     // Capped at the planned duration — see cappedEndTime. A phone that sleeps mid
@@ -50,6 +58,11 @@ export async function completeSession(userId: string, id: string) {
 export async function cancelSession(userId: string, id: string) {
   const existing = await prisma.focusSession.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Session not found")
+  // Symmetrical with completeSession: cancelling a finished session would
+  // otherwise rewrite a completed row's status and endTime.
+  if (existing.status !== "running") {
+    throw new ApiError(409, "Session is not running")
+  }
   await prisma.focusSession.update({
     where: { id },
     // Same clamp as completeSession. A device that sleeps mid-timer and cancels

@@ -5,12 +5,12 @@ import { notFound, badRequest } from "@/lib/apiResponse"
 /** List CRUD for the mobile API — mirrors `src/app/actions/lists.ts`. */
 
 const createSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().trim().min(1).max(100),
   color: z.string().max(30).optional(),
 })
 
 const updateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name: z.string().trim().min(1).max(100).optional(),
   color: z.string().max(30).nullable().optional(),
 })
 

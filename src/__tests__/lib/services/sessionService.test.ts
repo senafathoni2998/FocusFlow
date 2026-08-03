@@ -109,7 +109,7 @@ describe("sessionService.completeSession", () => {
 
   it("clamps endTime to startTime + duration when a sleeping device finishes hours late", async () => {
     const startTime = new Date(Date.now() - 3 * 60 * 60 * 1000) // started 3h ago
-    prisma.focusSession.findFirst.mockResolvedValue({ id: "s1", startTime, duration: 1500 })
+    prisma.focusSession.findFirst.mockResolvedValue({ id: "s1", startTime, duration: 1500, status: "running" })
     prisma.focusSession.update.mockResolvedValue({ id: "s1", status: "completed" })
 
     await completeSession("u1", "s1")
@@ -123,7 +123,7 @@ describe("sessionService.completeSession", () => {
 
   it("keeps the real endTime when the session finishes early (no padding)", async () => {
     const startTime = new Date(Date.now() - 60 * 1000) // one minute into a 25-min timer
-    prisma.focusSession.findFirst.mockResolvedValue({ id: "s1", startTime, duration: 1500 })
+    prisma.focusSession.findFirst.mockResolvedValue({ id: "s1", startTime, duration: 1500, status: "running" })
     prisma.focusSession.update.mockResolvedValue({ id: "s1" })
 
     await completeSession("u1", "s1")
@@ -132,6 +132,46 @@ describe("sessionService.completeSession", () => {
     const elapsed = endTime.getTime() - startTime.getTime()
     expect(elapsed).toBeGreaterThanOrEqual(60 * 1000)
     expect(elapsed).toBeLessThan(90 * 1000) // nowhere near the 1500s cap
+  })
+})
+
+describe("sessionService — only a running session can be closed", () => {
+  it("refuses to complete a session the user already cancelled", async () => {
+    // Focus metrics filter on status "completed", so flipping a cancelled row
+    // would start counting time the user explicitly abandoned.
+    prisma.focusSession.findFirst.mockResolvedValue({
+      id: "s1",
+      startTime: new Date(),
+      duration: 1500,
+      status: "cancelled",
+    })
+
+    await expect(completeSession("u1", "s1")).rejects.toMatchObject({ status: 409 })
+    expect(prisma.focusSession.update).not.toHaveBeenCalled()
+  })
+
+  it("refuses to re-complete a finished session, which would re-derive its endTime", async () => {
+    prisma.focusSession.findFirst.mockResolvedValue({
+      id: "s1",
+      startTime: new Date(),
+      duration: 1500,
+      status: "completed",
+    })
+
+    await expect(completeSession("u1", "s1")).rejects.toMatchObject({ status: 409 })
+    expect(prisma.focusSession.update).not.toHaveBeenCalled()
+  })
+
+  it("refuses to cancel a session that already finished", async () => {
+    prisma.focusSession.findFirst.mockResolvedValue({
+      id: "s1",
+      startTime: new Date(),
+      duration: 1500,
+      status: "completed",
+    })
+
+    await expect(cancelSession("u1", "s1")).rejects.toMatchObject({ status: 409 })
+    expect(prisma.focusSession.update).not.toHaveBeenCalled()
   })
 })
 
@@ -147,7 +187,7 @@ describe("sessionService.cancelSession", () => {
   })
 
   it("marks the session cancelled, stamps endTime and returns a success flag", async () => {
-    prisma.focusSession.findFirst.mockResolvedValue({ id: "s1", startTime: new Date(), duration: 1500 })
+    prisma.focusSession.findFirst.mockResolvedValue({ id: "s1", startTime: new Date(), duration: 1500, status: "running" })
     prisma.focusSession.update.mockResolvedValue({ id: "s1" })
 
     const result = await cancelSession("u1", "s1")

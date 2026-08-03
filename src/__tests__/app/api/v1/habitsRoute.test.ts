@@ -319,14 +319,15 @@ describe("POST /api/v1/habits/:id/archive", () => {
     expect(archiveHabit).not.toHaveBeenCalled()
   })
 
-  it("currently forwards a non-boolean `archived` unvalidated (see suspectedDefects)", async () => {
-    // Documents CURRENT behaviour: the route casts rather than parses, so a string
-    // reaches Prisma's boolean column and fails there as a 500 instead of a 400.
-    ;(archiveHabit as jest.Mock).mockResolvedValue({ success: true })
+  it("rejects a non-boolean `archived` with a 400 rather than a Prisma 500", async () => {
+    // The route parses instead of casting: a TypeScript cast is erased at
+    // runtime, so a string used to reach Prisma's Boolean column and blow up
+    // there — an opaque 500 where every sibling habit route answers 400.
     const token = await signAccessToken("u1")
 
-    await ARCHIVE(req(`Bearer ${token}`, { archived: "nope" }), ctx({ id: "h1" }))
+    const res = await ARCHIVE(req(`Bearer ${token}`, { archived: "nope" }), ctx({ id: "h1" }))
 
-    expect(archiveHabit).toHaveBeenCalledWith("u1", "h1", "nope")
+    expect(res.status).toBe(400)
+    expect(archiveHabit).not.toHaveBeenCalled()
   })
 })
