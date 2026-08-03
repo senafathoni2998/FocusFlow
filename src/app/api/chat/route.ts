@@ -66,16 +66,15 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    // Preserved verbatim from before the port refactor: a malformed body used to
-    // fall through to the handler's outer catch and surface as this 500. A 400
-    // would be more accurate — it is the caller's mistake — but changing it here
-    // would smuggle a behaviour change into a refactor, so it stays as it was.
+    // A body the server cannot parse is the CALLER's mistake, so it gets a 4xx.
+    // This used to answer 500 — an accident of the request being parsed inside
+    // the handler's outer try — which told a client with a broken payload that
+    // the server had failed, so the sensible reaction was to retry the same
+    // broken request rather than fix it. Every other /api/v1 route already maps
+    // a malformed body to 400 via readJson; this is the last one that did not.
     return NextResponse.json(
-      {
-        error: "Failed to process chat message",
-        message: "Sorry, something went wrong. Please try again.",
-      },
-      { status: 500 },
+      { error: "Invalid request body", message: "The request body must be valid JSON." },
+      { status: 400 },
     );
   }
 
