@@ -1,8 +1,10 @@
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { notFound, badRequest } from "@/lib/apiResponse"
+import { satisfiedDayCounts } from "@/lib/habitTotals"
 import { computeHabitStats } from "@/lib/habitStats"
 import type { Habit as HabitShape } from "@/types/habit"
+import { recordTombstone } from "@/lib/tombstones"
 
 /**
  * Habit CRUD + check-ins for the mobile API — mirrors `src/app/actions/habits.ts`.
@@ -38,15 +40,42 @@ function toCheckInDate(dateStr?: string): Date {
   return new Date(Date.UTC(y, mo - 1, d))
 }
 
+/**
+ * Archived habits, mirroring getArchivedGoals.
+ *
+ * archiveHabit already accepted `archived: false`, so unarchiving worked — but
+ * nothing could LIST an archived habit, which made archiving a one-way trip from
+ * either client. Goals had `/goals/archived`; habits had no equivalent.
+ */
+export async function getArchivedHabits(userId: string) {
+  return listHabits(userId, true)
+}
+
 export async function getHabits(userId: string) {
+  return listHabits(userId, false)
+}
+
+async function listHabits(userId: string, archived: boolean) {
   const habits = await prisma.habit.findMany({
-    where: { userId, archived: false },
-    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    where: { userId, archived },
+    orderBy: archived
+      ? [{ updatedAt: "desc" }]
+      : [{ order: "asc" }, { createdAt: "asc" }],
     include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
   })
-  return habits.map((h) => ({
-    ...h,
-    stats: computeHabitStats(h as unknown as HabitShape),
+  // checkIns are needed to compute the stats but must NOT be spread into the
+  // response: the Flutter client has zero readers for them (it renders the
+  // server-computed `stats`, per DECISIONS.md B6), so shipping up to 1200 rows per
+  // habit added roughly a megabyte of uncompressed payload to every Habits tab.
+  // Lifetime totals come from a count, not the capped slice — see habitTotals.
+  const totals = await satisfiedDayCounts(habits)
+  return habits.map(({ checkIns, ...rest }) => ({
+    ...rest,
+    stats: computeHabitStats({
+      ...rest,
+      checkIns,
+      totalCheckInDays: totals.get(rest.id),
+    } as unknown as HabitShape),
   }))
 }
 
@@ -88,6 +117,7 @@ export async function deleteHabit(userId: string, id: string) {
   const existing = await prisma.habit.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Habit not found")
   await prisma.habit.delete({ where: { id } }) // cascades check-ins
+  await recordTombstone(userId, "habit", id)
   return { success: true }
 }
 
@@ -128,10 +158,21 @@ export async function checkInHabit(userId: string, habitId: string, input: unkno
     where: { id: habitId, userId },
     include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
   })
+  // The exact total matters here too: without it, totalDays would differ between
+  // this response and the next list fetch, so the number would visibly jump.
+  const totals = updated ? await satisfiedDayCounts([updated]) : null
   return {
     success: true,
+    // Same projection as getHabits: compute from checkIns, then drop them.
     habit: updated
-      ? { ...updated, stats: computeHabitStats(updated as unknown as HabitShape) }
+      ? (({ checkIns, ...rest }) => ({
+          ...rest,
+          stats: computeHabitStats({
+            ...rest,
+            checkIns,
+            totalCheckInDays: totals?.get(rest.id),
+          } as unknown as HabitShape),
+        }))(updated)
       : null,
   }
 }

@@ -4,7 +4,7 @@
  * modal. Child views are stubbed so these focus on wiring and horizon filtering.
  */
 
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 const mockReplace = jest.fn()
@@ -146,13 +146,22 @@ describe("TasksWorkspace", () => {
     expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("status=todo"), expect.anything())
   })
 
-  it("typing in search writes ?q", async () => {
-    // The search input is URL-controlled; with a static useSearchParams mock it
-    // resets each keystroke, so assert on a single character (still exercises
-    // the query → URL wiring deterministically).
+  it("typing in search writes the whole term to ?q", async () => {
+    // Regression: the input used to be fully controlled by useSearchParams, whose
+    // only writer is a router.replace inside a transition, so React restored the
+    // pre-keystroke value and all but the last character were dropped — "report"
+    // reached the URL as ?q=t. A local draft plus a debounce keeps every keystroke.
     render(<TasksWorkspace tasks={tasks} lists={testLists} allTags={testTags} />)
-    await userEvent.type(screen.getByLabelText("Search tasks"), "a")
-    expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining("q=a"), expect.anything())
+    const box = screen.getByLabelText("Search tasks")
+    await userEvent.type(box, "report")
+
+    expect(box).toHaveValue("report")
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("q=report"),
+        expect.anything(),
+      ),
+    )
   })
 
   it("opens the create-task modal from the New Task button", async () => {

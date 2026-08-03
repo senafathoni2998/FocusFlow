@@ -16,10 +16,18 @@ const ISSUER = "focusflow"
 const ACCESS_AUD = "focusflow-mobile"
 const REFRESH_AUD = "focusflow-mobile-refresh"
 
+/** Thrown when the server has no signing secret — a misconfiguration, not a bad token. */
+class MissingSecretError extends Error {
+  constructor() {
+    super("NEXTAUTH_SECRET (or AUTH_SECRET) is not set")
+    this.name = "MissingSecretError"
+  }
+}
+
 function secretKey(): Uint8Array {
   const secret = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET
   if (!secret) {
-    throw new Error("NEXTAUTH_SECRET (or AUTH_SECRET) is not set")
+    throw new MissingSecretError()
   }
   return new TextEncoder().encode(secret)
 }
@@ -78,7 +86,12 @@ async function verify(token: string, audience: string): Promise<string> {
 export async function verifyRefreshToken(token: string): Promise<string> {
   try {
     return await verify(token, REFRESH_AUD)
-  } catch {
+  } catch (err) {
+    // A missing secret used to be indistinguishable from a bad token, so an
+    // unconfigured server told every client its credentials were invalid — and
+    // the Flutter app responded by discarding them and demanding a re-login it
+    // could never complete. Let it surface as a 500 so the real cause is visible.
+    if (err instanceof MissingSecretError) throw err
     throw unauthorized("Invalid or expired refresh token")
   }
 }
@@ -103,7 +116,10 @@ export async function requireApiUser(req: Request): Promise<string> {
   }
   try {
     return await verify(token, ACCESS_AUD)
-  } catch {
+  } catch (err) {
+    // See verifyRefreshToken: a server misconfiguration must not masquerade as
+    // the user's token being wrong.
+    if (err instanceof MissingSecretError) throw err
     throw unauthorized("Invalid or expired token")
   }
 }

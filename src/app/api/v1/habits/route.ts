@@ -1,5 +1,6 @@
 import { handleRoute, ok, readJson } from "@/lib/apiResponse"
 import { requireApiUser } from "@/lib/apiAuth"
+import { withIdempotency } from "@/lib/idempotency"
 import { getHabits, createHabit } from "@/lib/services/habitService"
 
 export const runtime = "nodejs"
@@ -14,5 +15,7 @@ export const GET = handleRoute(async (req) => {
 export const POST = handleRoute(async (req) => {
   const userId = await requireApiUser(req)
   const body = await readJson(req)
-  return ok({ habit: await createHabit(userId, body) }, 201)
+  return withIdempotency(req, userId, "habits", body, async () =>
+    ok({ habit: await createHabit(userId, body) }, 201),
+  )
 })

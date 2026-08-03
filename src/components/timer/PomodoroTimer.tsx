@@ -60,9 +60,19 @@ export default function PomodoroTimer() {
     setTasks(userTasks.filter((t: any) => t.status !== "completed"))
   }
 
-  const handleTypeChange = (newType: TimerType) => {
+  const handleTypeChange = async (newType: TimerType) => {
     if (status === "running") {
       if (!confirm("Timer is running. Switch anyway?")) return
+    }
+
+    // Cancel the in-flight session first. Without this the row stayed
+    // status="running" with endTime=null forever — its id was dropped here and
+    // overwritten by the next Start — so it never became completed or cancelled,
+    // and leaked into the session counts and the AI insights payload. A paused
+    // session has the same problem and does not even get the confirm above.
+    if (currentSessionId) {
+      await cancelSession(currentSessionId)
+      setCurrentSessionId(null)
     }
 
     setType(newType)
@@ -104,7 +114,7 @@ export default function PomodoroTimer() {
     setStatus("idle")
 
     if (currentSessionId) {
-      await completeSession(currentSessionId, new Date())
+      await completeSession(currentSessionId)
     }
 
     setCurrentSessionId(null)

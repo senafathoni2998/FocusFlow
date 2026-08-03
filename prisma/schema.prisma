@@ -26,6 +26,8 @@ model User {
   goals      Goal[]
   reminders  Reminder[]
   savedFilters SavedFilter[]
+  tombstones Tombstone[]
+  idempotencyKeys IdempotencyKey[]
 }
 
 model Habit {
@@ -58,6 +60,7 @@ model HabitCheckIn {
   date      DateTime @db.Date
   amount    Float    @default(1)
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@unique([habitId, date])
 }
@@ -95,6 +98,8 @@ model Reminder {
   triggerAt    DateTime // absolute instant the reminder should fire
   dispatchedAt DateTime? // set once a dispatcher has surfaced it (store-only: unused for now)
   createdAt    DateTime  @default(now())
+  // Delta sync keys off this: without it a client cannot tell a reminder changed.
+  updatedAt    DateTime  @default(now()) @updatedAt
 
   @@index([userId, triggerAt])
   @@index([taskId])
@@ -251,6 +256,75 @@ model FocusSession {
   taskId      String?
   task        Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   @@index([userId, startTime])
+}
+
+/// Record that something was deleted, so a client that was offline can find out.
+///
+/// The alternative — a `deletedAt` column on every model, filtered in every
+/// query — was rejected deliberately. It would touch roughly fifty query sites,
+/// and a single one that forgot the filter would serve deleted rows silently:
+/// a correctness and privacy bug with no symptom. Here the rows are genuinely
+/// deleted and every existing query is untouched, so that failure is impossible.
+///
+/// The failure mode this DOES have is mild and self-correcting: a delete path
+/// that forgets to record a tombstone leaves a client holding a stale row until
+/// its next full refresh.
+///
+/// Only top-level entities a client tracks get one. Nested data (subtasks'
+/// parents, reminders, tags) rides along inside its owning record, so a change
+/// there already reaches the client as a change to that record.
+model Tombstone {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "task" | "list" | "tag" | "habit" | "goal" | "savedFilter"
+  entityType String
+  entityId   String
+  deletedAt  DateTime @default(now())
+
+  // The sync query is always "this user's tombstones since <cursor>".
+  @@index([userId, deletedAt])
+  @@unique([userId, entityType, entityId])
+}
+
+/// Makes a retried write safe to replay.
+///
+/// Needed before a client can queue writes while offline. Without it a flaky
+/// connection produces the worst possible outcome: the request succeeded, the
+/// response never arrived, the client retries, and the user ends up with two of
+/// something — or, for the delta endpoints, twice the progress they logged.
+/// Refusing the write would be better than that, which is why offline writes
+/// were held back until this existed.
+///
+/// Only non-idempotent endpoints use it. Setting a status or reordering a column
+/// reaches the same end state however many times it runs; creating a row or
+/// applying a delta does not.
+model IdempotencyKey {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Client-generated, unique per logical operation.
+  key      String
+  endpoint String
+  /// Hash of the request body. The same key arriving with a DIFFERENT body is a
+  /// client bug, and replaying the first response would answer the wrong
+  /// question — it is rejected instead.
+  requestHash String
+
+  /// pending while the original request is still running, so a concurrent retry
+  /// can be told to wait rather than executing a second time.
+  status         String  @default("pending")
+  responseStatus Int?
+  responseBody   Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, key])
+  // Keys are only useful for as long as a client might retry; this supports
+  // pruning old ones.
+  @@index([createdAt])
 }

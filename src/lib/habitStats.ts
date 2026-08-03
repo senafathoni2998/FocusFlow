@@ -66,8 +66,12 @@ export function computeHabitStats(habit: Habit, now: Date = new Date()): HabitSt
   const todayAmount = amounts.get(localDayKey(now)) ?? 0
   const todayDone = isSatisfied(habit, todayAmount)
 
+  // Derived from the capped check-in slice unless the fetcher supplied an exact
+  // lifetime count — see Habit.totalCheckInDays. Without that, this figure
+  // silently stops growing once a habit outlives the fetch cap.
   let totalDays = 0
   for (const [, amt] of amounts) if (isSatisfied(habit, amt)) totalDays++
+  if (typeof habit.totalCheckInDays === "number") totalDays = habit.totalCheckInDays
 
   // ---- Weekly habits: score by WEEK, not by day. A week (Sunday-anchored,
   // local) is "satisfied" once it has >= weeklyTarget satisfied days; streaks
@@ -147,6 +151,18 @@ export function computeHabitStats(habit: Habit, now: Date = new Date()): HabitSt
       }
       weeks++
       if (satisfied >= target) satisfiedWeeks++
+    }
+    // From the 1st until the month's first Sunday, no week anchor falls inside the
+    // month, so the loop above counts zero weeks and the rate reported a flat 0% —
+    // an identical daily habit shows 100% on the same day. That window is 1-6 days
+    // long in 11 months out of 12. Fall back to the current (boundary-crossing)
+    // week, which is the only week that has actually elapsed this month.
+    if (weeks === 0) {
+      const ws = weekAt(0)
+      if (!createdWeekStart || ws >= createdWeekStart) {
+        weeks = 1
+        if (satisfiedInWeek(ws) >= target) satisfiedWeeks = 1
+      }
     }
     const monthlyRate = weeks > 0 ? Math.round((satisfiedWeeks / weeks) * 100) : 0
 

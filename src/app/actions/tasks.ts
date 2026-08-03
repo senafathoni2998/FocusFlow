@@ -9,8 +9,10 @@ import {
   TASK_PRIORITIES,
   priorityRankOf,
   isTerminalStatus,
+  ORDER_STEP,
 } from "@/lib/taskConstants"
-import { computeNextOccurrence, isRecurrenceFreq } from "@/lib/recurrence"
+import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
+import { normalizeTagName } from "@/lib/tags"
 import { startOfDay } from "date-fns"
 
 /**
@@ -56,7 +58,10 @@ function tagCreateInput(tagNames: string[] | undefined, userId: string) {
   const names = Array.from(
     new Set(
       (tagNames ?? [])
-        .map((t) => t.trim())
+        // normalizeTagName also strips commas — the web forms and the ?tags= filter
+        // are comma-delimited, so a name containing one gets split into two tags on
+        // the next save and detaches from the task.
+        .map((t) => normalizeTagName(t))
         .filter((t) => t.length > 0 && t.length <= MAX_TAG_LEN)
     )
   ).slice(0, MAX_TAGS_PER_TASK)
@@ -551,7 +556,7 @@ export async function completeTask(id: string) {
   try {
     const task = await prisma.task.findFirst({
       where: { id, userId: session.user.id },
-      include: { recurrence: true },
+      include: { recurrence: true, reminders: { select: { id: true, triggerAt: true } } },
     })
 
     if (!task) {
@@ -571,6 +576,14 @@ export async function completeTask(id: string) {
             ? new Date(next.getTime() - (task.dueDate.getTime() - task.startDate.getTime()))
             : task.startDate
 
+        // Move the reminders with the task and re-arm them; otherwise they stay
+        // pinned to the occurrence that just passed and stay marked dispatched.
+        const reminderMoves = shiftedReminders(
+          task.reminders,
+          task.dueDate ?? task.startDate,
+          next,
+        )
+
         await prisma.$transaction([
           prisma.task.update({
             where: { id },
@@ -580,6 +593,12 @@ export async function completeTask(id: string) {
             where: { id: task.recurrence.id },
             data: { completedCount: { increment: 1 } },
           }),
+          ...reminderMoves.map((r) =>
+            prisma.reminder.update({
+              where: { id: r.id },
+              data: { triggerAt: r.triggerAt, dispatchedAt: null },
+            }),
+          ),
         ])
 
         revalidatePath("/tasks")
@@ -603,15 +622,13 @@ export async function completeTask(id: string) {
   }
 }
 
-export async function getTasks(userId?: string) {
-  // If userId is provided, use it directly (for API routes)
-  // Otherwise, get session (for Server Actions)
-  let targetUserId = userId
-
-  if (!targetUserId) {
-    const session = await auth()
-    targetUserId = session?.user?.id
-  }
+export async function getTasks() {
+  // Every export in this file is a "use server" action, i.e. a publicly callable
+  // endpoint. The user is therefore ALWAYS derived from the session here — an
+  // earlier signature took an optional `userId` and skipped `auth()` when it was
+  // supplied, which let an unauthenticated caller read any user's tasks.
+  const session = await auth()
+  const targetUserId = session?.user?.id
 
   if (!targetUserId) {
     return []
@@ -660,6 +677,72 @@ export async function getTasks(userId?: string) {
   }
 }
 
+/**
+ * Rewrite a whole column's `order` values as `index * ORDER_STEP`.
+ *
+ * `order` is an Int, so the midpoint insert used by drag-and-drop halves the gap
+ * each time: 10/20 -> 15 -> 13 -> 12 -> 11, and the next midpoint rounds to 11 —
+ * the successor's own order. The card then renders on the wrong side of it (the
+ * server breaks ties by createdAt) and that slot becomes permanently
+ * un-insertable, because every further drop produces 11 again. Raising the step
+ * only delays it.
+ *
+ * The client calls this instead of reorderTask once the neighbouring gap is too
+ * small to split, handing over the intended final ORDER of the column. Every id
+ * is ownership-checked and every write happens in one transaction, so a partial
+ * renumber can't leave the board in a state worse than it started.
+ */
+export async function renumberTasks(status: string, orderedIds: string[]) {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { error: "Unauthorized" }
+  }
+
+  if (!TASK_STATUSES.includes(status as never)) {
+    return { error: "Invalid status" }
+  }
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return { error: "Nothing to reorder" }
+  }
+  // A column that large is not a real drag; refuse rather than issue 500 writes.
+  if (orderedIds.length > 500) {
+    return { error: "Too many tasks to reorder at once" }
+  }
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    return { error: "Duplicate task in order" }
+  }
+
+  try {
+    // Every id must belong to the caller. Counting the owned rows is enough:
+    // combined with the duplicate check above, a full match proves the set is
+    // exactly the caller's.
+    const owned = await prisma.task.findMany({
+      where: { id: { in: orderedIds }, userId: session.user.id },
+      select: { id: true },
+    })
+    if (owned.length !== orderedIds.length) {
+      return { error: "Task not found" }
+    }
+
+    await prisma.$transaction(
+      orderedIds.map((id, index) =>
+        prisma.task.update({
+          where: { id },
+          data: { status, order: index * ORDER_STEP },
+        })
+      )
+    )
+
+    revalidatePath("/tasks")
+    revalidatePath("/dashboard")
+    return { success: true, count: orderedIds.length }
+  } catch (error) {
+    console.error("[renumberTasks] Error:", error)
+    return { error: "Failed to reorder tasks" }
+  }
+}
+
 export async function reorderTask(data: {
   id: string
   newStatus: string
@@ -669,6 +752,16 @@ export async function reorderTask(data: {
 
   if (!session?.user?.id) {
     return { error: "Unauthorized" }
+  }
+
+  // Task.status is an unconstrained String column and this is a public action, so
+  // an unvalidated newStatus would write an arbitrary value that no view groups or
+  // renders. The mobile API's reorderTask already enforced this via zod.
+  if (!TASK_STATUSES.includes(data.newStatus as never)) {
+    return { error: "Invalid status" }
+  }
+  if (!Number.isInteger(data.newOrder)) {
+    return { error: "Invalid order" }
   }
 
   try {

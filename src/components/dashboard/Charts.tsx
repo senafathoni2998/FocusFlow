@@ -56,11 +56,25 @@ const TASK_STATUS_COLORS = ["#94a3b8", "#0ea5e9", "#22c55e"]
 
 export default function Charts({ dailyData, taskStats, sessionStats }: ChartsProps) {
   // Prepare data for charts
+  // `d.date` is a bare calendar key ("YYYY-MM-DD") that /api/analytics buckets in
+  // UTC. `new Date("2026-01-02")` parses as UTC midnight, so formatting it with a
+  // LOCAL-timezone formatter renders the previous day for any viewer west of UTC —
+  // Tuesday's work appeared under Monday on both charts. Format the key as the
+  // calendar day it is.
+  const formatDayKey = (key: string) => {
+    const [y, m, dd] = key.split("-").map(Number)
+    if (!y || !m || !dd) return key
+    return new Date(y, m - 1, dd).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    })
+  }
+
   const focusTimeData = dailyData
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .map((d) => ({
       ...d,
-      date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      date: formatDayKey(d.date)
     }))
 
   const sessionsPerDayData = focusTimeData.map((d) => ({

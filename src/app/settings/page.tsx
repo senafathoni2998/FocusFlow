@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { getAISettings } from "@/app/actions/settings"
 import AISettingsForm from "@/components/settings/AISettingsForm"
+import DataExportCard from "@/components/settings/DataExportCard"
 
 export default async function SettingsPage() {
   const session = await auth()
@@ -20,6 +21,7 @@ export default async function SettingsPage() {
           Choose which AI provider powers your assistant and insights.
         </p>
         <AISettingsForm settings={settings} />
+        <DataExportCard />
       </div>
     </main>
   )

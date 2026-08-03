@@ -55,3 +55,13 @@ export const PRIORITY_LABELS: Record<TaskPriority, string> = {
   medium: "Medium",
   high: "High",
 }
+
+/**
+ * Spacing between adjacent `order` values, so a drag has integer room to insert
+ * between two neighbours.
+ *
+ * Lives here rather than in actions/tasks.ts because that module is "use server",
+ * where every export must be an async function — a plain constant there fails the
+ * build (and neither tsc nor Jest catches it; only `next build` does).
+ */
+export const ORDER_STEP = 10

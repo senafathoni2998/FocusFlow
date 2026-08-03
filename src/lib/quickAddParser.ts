@@ -73,14 +73,17 @@ function upcomingWeekday(from: Date, day: Day): Date {
  * matched substring (so the caller can strip it), or null. `text` is assumed to
  * have single-spaced whitespace. Patterns are tried most-specific first.
  */
-function extractDate(text: string, now: Date): { iso: string; match: string } | null {
+function extractDate(
+  text: string,
+  now: Date,
+): { iso: string; match: string; index: number } | null {
   const today = startOfDay(now)
 
   // ISO YYYY-MM-DD
   let m = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(text)
   if (m) {
     const dt = validYmdParts(Number(m[1]), Number(m[2]), Number(m[3]))
-    if (dt) return { iso: ymd(dt), match: m[0] }
+    if (dt) return { iso: ymd(dt), match: m[0], index: m.index }
   }
 
   // M/D/YY(YY) — an explicit YEAR is required. Year-less "1/2" is ambiguous with
@@ -90,7 +93,7 @@ function extractDate(text: string, now: Date): { iso: string; match: string } | 
     let year = Number(m[3])
     if (year < 100) year += 2000
     const dt = validYmdParts(year, Number(m[1]), Number(m[2]))
-    if (dt) return { iso: ymd(dt), match: m[0] }
+    if (dt) return { iso: ymd(dt), match: m[0], index: m.index }
   }
 
   // in N days / in N weeks (bounded)
@@ -99,25 +102,25 @@ function extractDate(text: string, now: Date): { iso: string; match: string } | 
     const n = Number(m[1])
     if (n <= MAX_IN_DAYS) {
       const dt = /^week/i.test(m[2]) ? addWeeks(today, n) : addDays(today, n)
-      return { iso: ymd(dt), match: m[0] }
+      return { iso: ymd(dt), match: m[0], index: m.index }
     }
   }
 
   // today / tonight
   m = /\b(today|tonight)\b/i.exec(text)
-  if (m) return { iso: ymd(today), match: m[0] }
+  if (m) return { iso: ymd(today), match: m[0], index: m.index }
 
   // tomorrow
   m = /\b(tomorrow|tmr|tmrw)\b/i.exec(text)
-  if (m) return { iso: ymd(addDays(today, 1)), match: m[0] }
+  if (m) return { iso: ymd(addDays(today, 1)), match: m[0], index: m.index }
 
   // next week
   m = /\bnext\s+week\b/i.exec(text)
-  if (m) return { iso: ymd(addDays(today, 7)), match: m[0] }
+  if (m) return { iso: ymd(addDays(today, 7)), match: m[0], index: m.index }
 
   // (this) weekend -> the upcoming Saturday
   m = /\b(?:this\s+)?weekend\b/i.exec(text)
-  if (m) return { iso: ymd(upcomingWeekday(today, 6)), match: m[0] }
+  if (m) return { iso: ymd(upcomingWeekday(today, 6)), match: m[0], index: m.index }
 
   // A bare FULL-name weekday (not "next <weekday>" — that's ambiguous, defer to AI).
   // 3-letter forms (sun/sat/mon…) are intentionally excluded: they collide with
@@ -125,7 +128,7 @@ function extractDate(text: string, now: Date): { iso: string; match: string } | 
   m = /(?<!next\s)\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i.exec(text)
   if (m) {
     const day = WEEKDAYS[m[1].toLowerCase()]
-    if (day !== undefined) return { iso: ymd(upcomingWeekday(today, day)), match: m[0] }
+    if (day !== undefined) return { iso: ymd(upcomingWeekday(today, day)), match: m[0], index: m.index }
   }
 
   return null
@@ -165,7 +168,14 @@ export function parseQuickAdd(input: string, now: Date = new Date()): ParsedQuic
   const dateHit = extractDate(text, now)
   if (dateHit) {
     dueDate = dateHit.iso
-    text = text.replace(dateHit.match, " ")
+    // Cut at the matched OFFSET, not by value. `String.replace(string, …)` hits the
+    // first textual occurrence, which is not necessarily the one the regex matched:
+    // the weekday pattern deliberately skips "Monday" in "next Monday" via a
+    // lookbehind, but replace() then deleted that very word — "Reschedule next
+    // Monday meeting to Monday" saved as "Reschedule next meeting to Monday".
+    // Embedded substrings broke the same way ("Buy todays paper today").
+    text =
+      text.slice(0, dateHit.index) + " " + text.slice(dateHit.index + dateHit.match.length)
   }
 
   const title = text.replace(/\s+/g, " ").trim()

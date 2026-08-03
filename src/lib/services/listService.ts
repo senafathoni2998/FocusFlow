@@ -1,16 +1,17 @@
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { notFound, badRequest } from "@/lib/apiResponse"
+import { recordTombstone } from "@/lib/tombstones"
 
 /** List CRUD for the mobile API — mirrors `src/app/actions/lists.ts`. */
 
 const createSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().trim().min(1).max(100),
   color: z.string().max(30).optional(),
 })
 
 const updateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
+  name: z.string().trim().min(1).max(100).optional(),
   color: z.string().max(30).nullable().optional(),
 })
 
@@ -42,6 +43,11 @@ export async function updateList(userId: string, id: string, input: unknown) {
   }
   if (v.color !== undefined) data.color = v.color
 
+  // Every field is optional, so `{}` validates. Writing it anyway bumped
+  // updatedAt for a request that changed nothing — and updatedAt is what the
+  // archived views order by, so a no-op PATCH could reshuffle a list.
+  if (Object.keys(data).length === 0) return existing
+
   return prisma.list.update({ where: { id }, data })
 }
 
@@ -50,6 +56,9 @@ export async function deleteList(userId: string, id: string) {
   if (!existing) throw notFound("List not found")
   // onDelete: SetNull re-parents this list's tasks to the Inbox.
   await prisma.list.delete({ where: { id } })
+  // Tasks are re-parented to Inbox (SetNull), not deleted — so only the list
+  // itself gets a tombstone.
+  await recordTombstone(userId, "list", id)
   return { success: true }
 }
 

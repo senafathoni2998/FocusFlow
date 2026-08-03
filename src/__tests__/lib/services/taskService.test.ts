@@ -86,6 +86,9 @@ describe("taskService.deleteTask", () => {
   })
 
   it("deletes an owned task and cleans up its recurrence rule", async () => {
+    // deleteTask now looks up the subtasks the cascade will remove, so each
+    // gets its own tombstone — a client holds them as separate rows.
+    prisma.task.findMany.mockResolvedValue([])
     prisma.task.findFirst.mockResolvedValue({ id: "t1", recurrenceId: "r1" })
     prisma.task.delete.mockResolvedValue({})
     const res = await deleteTask("u1", "t1")

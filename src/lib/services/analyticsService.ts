@@ -39,10 +39,17 @@ export async function getDashboard(userId: string) {
       if (open && due < todayStart) overdue++
       if (open && due >= todayStart && due < tomorrowStart) dueToday++
     }
-    if (t.completedAt) {
+    // `completedAt` alone is not "completed": TERMINAL_STATUSES includes
+    // "wont-do", and both task write paths stamp completedAt for ANY terminal
+    // status. Counting it unfiltered meant abandoning a task showed up on the
+    // dashboard as having finished one — the metric rewarded giving up.
+    if (t.completedAt && t.status === "completed") {
       const c = new Date(t.completedAt)
       if (c >= todayStart && c < tomorrowStart) completedToday++
-      if (c >= weekAgo) completedThisWeek++
+      // Upper-bounded like completedToday. No write path can produce a future
+      // completedAt today (every one is server-stamped), but an unbounded
+      // comparison would count one the moment an import or backfill could.
+      if (c >= weekAgo && c < tomorrowStart) completedThisWeek++
     }
   }
 

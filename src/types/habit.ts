@@ -20,6 +20,15 @@ export interface Habit {
   order?: number
   createdAt?: Date | string
   checkIns?: HabitCheckInSummary[]
+  /**
+   * Exact number of satisfied days over the habit's whole life.
+   *
+   * `checkIns` is fetched with a `take` cap (the streak walks only need a few
+   * years, and shipping every row would bloat the payload), so counting the
+   * array saturates once a habit passes that many check-in days. When the
+   * fetcher supplies this, computeHabitStats trusts it over the capped array.
+   */
+  totalCheckInDays?: number
 }
 
 export const HABIT_COLORS = ["primary", "success", "warning", "danger"] as const

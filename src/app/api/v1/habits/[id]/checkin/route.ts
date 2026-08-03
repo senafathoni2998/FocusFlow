@@ -1,5 +1,6 @@
 import { handleRoute, ok, readJson } from "@/lib/apiResponse"
 import { requireApiUser } from "@/lib/apiAuth"
+import { withIdempotency } from "@/lib/idempotency"
 import { checkInHabit } from "@/lib/services/habitService"
 
 export const runtime = "nodejs"
@@ -12,5 +13,9 @@ export const POST = handleRoute(async (req, ctx) => {
   const userId = await requireApiUser(req)
   const { id } = await ctx.params
   const body = await readJson(req)
-  return ok(await checkInHabit(userId, id, body))
+  // Also a delta: a replayed +1 turns one check-in into two, which then feeds
+  // streaks and the month rate.
+  return withIdempotency(req, userId, `habits/${id}/checkin`, body, async () =>
+    ok(await checkInHabit(userId, id, body)),
+  )
 })

@@ -10,6 +10,7 @@ const mockPrismaClient = {
   },
   user: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
@@ -18,6 +19,7 @@ const mockPrismaClient = {
     findFirst: jest.fn(),
     findMany: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
   },
   $disconnect: jest.fn(),
 }

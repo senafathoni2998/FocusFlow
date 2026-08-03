@@ -38,3 +38,10 @@ next-env.d.ts
 
 # prisma
 # Keep migrations in VCS
+
+# Playwright MCP session artifacts (snapshots, console logs)
+.playwright-mcp/
+
+# Playwright
+/test-results/
+/playwright-report/

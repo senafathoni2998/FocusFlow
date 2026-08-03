@@ -45,7 +45,15 @@ export async function GET() {
         take: 10,
       }),
       prisma.focusSession.findMany({
-        where: { userId: uid, status: "completed", startTime: { gte: start, lte: end } },
+        // `type: "pomodoro"` matters: short-break/long-break rows are FocusSessions
+        // too, and without this filter the recap's "focus time" silently counted
+        // break minutes as focus. Same filter as analyticsService and getTasks.
+        where: {
+          userId: uid,
+          status: "completed",
+          type: "pomodoro",
+          startTime: { gte: start, lte: end },
+        },
         select: { startTime: true, endTime: true },
       }),
       prisma.habit.findMany({

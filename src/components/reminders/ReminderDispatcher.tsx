@@ -17,6 +17,9 @@ import { getDueReminders, markRemindersDispatched } from "@/app/actions/reminder
 
 const POLL_MS = 60_000
 const BANNER_TTL_MS = 15_000
+/** Cap the visible stack; the container is fixed and bottom-anchored, so extras
+ *  are clipped past the top of the viewport and become unreachable. */
+const MAX_BANNERS = 5
 
 interface FiredReminder {
   id: string
@@ -90,7 +93,10 @@ export default function ReminderDispatcher() {
           title: r.task?.title ?? "Task",
         }))
         shown.forEach((r) => showBrowserNotification(r.title))
-        setBanners((prev) => [...prev, ...shown])
+        // Keep only the most recent few on screen. The stack is bottom-anchored and
+        // fixed, so anything beyond a handful is clipped past the top of the
+        // viewport and can be neither read nor dismissed.
+        setBanners((prev) => [...prev, ...shown].slice(-MAX_BANNERS))
         shown.forEach((r) =>
           setTimeout(() => setBanners((prev) => prev.filter((b) => b.id !== r.id)), BANNER_TTL_MS)
         )

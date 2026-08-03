@@ -1,23 +1,36 @@
 import { NextResponse } from "next/server"
 import { hash } from "bcryptjs"
 import { prisma } from "@/lib/prisma"
+import { findUserByEmail, normalizeEmail } from "@/lib/email"
+import { clientKey, rateLimit, REGISTER_LIMIT } from "@/lib/rateLimit"
 import { z } from "zod"
 
 const signupSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(6),
   name: z.string().optional()
 })
 
 export async function POST(request: Request) {
   try {
+    // Same cap as the mobile register endpoint — both create accounts and neither
+    // requires a session, so throttling one and not the other protects nothing.
+    const limited = rateLimit(`register:ip:${clientKey(request)}`, REGISTER_LIMIT)
+    if (!limited.allowed) {
+      return NextResponse.json(
+        { error: "Too many attempts. Try again later." },
+        { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      )
+    }
+
     const body = await request.json()
-    const { email, password, name } = signupSchema.parse(body)
+    const { email: rawEmail, password, name } = signupSchema.parse(body)
+    // Canonical on write, case-insensitive on the duplicate check — email is a
+    // case-insensitive identifier but User.email is a case-sensitive column.
+    const email = normalizeEmail(rawEmail)
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
+    const existingUser = await findUserByEmail(email)
 
     if (existingUser) {
       return NextResponse.json(

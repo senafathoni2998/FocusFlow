@@ -13,7 +13,7 @@ import { type DateHorizon, isDateHorizon } from "@/lib/dateHorizon"
 import { canonicalizeQuery } from "@/lib/savedFilters"
 import { isTerminalStatus } from "@/lib/taskConstants"
 import { useTaskUpdates } from "@/hooks/useTaskUpdates"
-import { reorderTask, completeTask } from "@/app/actions/tasks"
+import { reorderTask, renumberTasks, completeTask } from "@/app/actions/tasks"
 import { createList, deleteList } from "@/app/actions/lists"
 import { createSavedFilter, deleteSavedFilter } from "@/app/actions/savedFilters"
 import { deleteTag } from "@/app/actions/tags"
@@ -185,9 +185,17 @@ export default function TasksWorkspace({
         }
       }
       if ("custom" in patch) {
-        p.horizon = "custom"
-        p.from = toYMD(patch.custom?.from)
-        p.to = toYMD(patch.custom?.to)
+        const from = toYMD(patch.custom?.from)
+        const to = toYMD(patch.custom?.to)
+        // Only stay on the custom horizon while at least one bound survives.
+        // Setting it unconditionally meant clearing both date inputs left
+        // horizon=custom with null bounds, which resolves to an empty range and
+        // hides every undated task — with no smart list highlighted and both
+        // inputs blank, so nothing on screen explained where the tasks went.
+        // The state is URL-backed, so it could also be saved as a Saved View.
+        p.horizon = from || to ? "custom" : null
+        p.from = from
+        p.to = to
       }
       setParam(p)
     },
@@ -310,6 +318,33 @@ export default function TasksWorkspace({
     [router]
   )
 
+  /**
+   * The board asks for this when the gap between two neighbours is exhausted and
+   * a midpoint would collide. It hands over the column's intended final order,
+   * and the server respaces the whole column in one transaction.
+   */
+  const handleRenumber = useCallback(
+    (status: string, orderedIds: string[]) => {
+      const positionById = new Map(orderedIds.map((id, i) => [id, i * 10]))
+      setLocalTasks((prev) =>
+        prev.map((t) =>
+          positionById.has(t.id)
+            ? {
+                ...t,
+                status,
+                order: positionById.get(t.id)!,
+                completedAt: isTerminalStatus(status) ? t.completedAt ?? new Date() : null,
+              }
+            : t
+        )
+      )
+      renumberTasks(status, orderedIds).then((res) => {
+        if (res && "error" in res && res.error) router.refresh()
+      })
+    },
+    [router]
+  )
+
   const handleUpdate = useCallback(() => {
     setIsRefreshing(true)
     router.refresh()
@@ -378,6 +413,7 @@ export default function TasksWorkspace({
             <TaskBoard
               tasks={visible}
               onReorder={handleReorder}
+              onRenumber={handleRenumber}
               onUpdate={handleUpdate}
               reorderable={reorderable}
               subtasksByParent={subtasksByParent}

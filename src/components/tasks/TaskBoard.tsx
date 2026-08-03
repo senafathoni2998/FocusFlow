@@ -20,6 +20,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import TaskCard from "./TaskCard"
 import type { Task } from "@/types/task"
+import { ORDER_STEP } from "@/lib/taskConstants"
 
 /**
  * Controlled Kanban board. Renders the three status columns for whatever
@@ -38,13 +39,14 @@ const COLUMNS = [
   { id: "completed", title: "Completed", bgColor: "bg-success-50", titleColor: "text-success-700", countColor: "bg-success-200 text-success-700" },
 ]
 const COLUMN_IDS: string[] = COLUMNS.map((c) => c.id)
-const ORDER_STEP = 10
 
 type ColumnDef = (typeof COLUMNS)[number]
 
 interface TaskBoardProps {
   tasks: Task[]
   onReorder: (id: string, newStatus: string, newOrder: number) => void
+  /** Respace a whole column when the gap between neighbours is exhausted. */
+  onRenumber: (status: string, orderedIds: string[]) => void
   onUpdate?: () => void
   /** Enable drag-and-drop reordering (only when the full set is shown). */
   reorderable?: boolean
@@ -144,6 +146,7 @@ function StaticColumn({
 export default function TaskBoard({
   tasks,
   onReorder,
+  onRenumber,
   onUpdate,
   reorderable = true,
   subtasksByParent,
@@ -230,6 +233,18 @@ export default function TaskBoard({
     } else {
       const prevOrder = orderOf(tasksInNewStatus[newIndex - 1]) ?? (newIndex - 1) * ORDER_STEP
       const nextOrder = orderOf(tasksInNewStatus[newIndex]) ?? newIndex * ORDER_STEP
+
+      // No integer left between the neighbours. Splitting again would emit the
+      // successor's own order, putting the card on the wrong side of it and
+      // making this slot permanently un-insertable. Hand the whole column's
+      // intended order over instead and let the server respace it.
+      if (nextOrder - prevOrder < 2) {
+        const ids = tasksInNewStatus.map((t) => t.id)
+        ids.splice(newIndex, 0, activeIdStr)
+        onRenumber(newStatus, ids)
+        return
+      }
+
       newOrder = Math.round((prevOrder + nextOrder) / 2)
     }
 

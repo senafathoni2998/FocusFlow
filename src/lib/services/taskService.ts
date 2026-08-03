@@ -8,7 +8,9 @@ import {
   priorityRankOf,
   isTerminalStatus,
 } from "@/lib/taskConstants"
-import { computeNextOccurrence, isRecurrenceFreq } from "@/lib/recurrence"
+import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
+import { normalizeTagName } from "@/lib/tags"
+import { recordTombstone } from "@/lib/tombstones"
 
 /**
  * Task domain logic for the mobile API. This mirrors `src/app/actions/tasks.ts`
@@ -46,7 +48,9 @@ function tagCreateInput(tagNames: string[] | undefined, userId: string) {
   const names = Array.from(
     new Set(
       (tagNames ?? [])
-        .map((t) => t.trim())
+        // Comma-stripping mirrors the web action: the task forms and the ?tags=
+        // filter are comma-delimited, so a comma inside a name corrupts both.
+        .map((t) => normalizeTagName(t))
         .filter((t) => t.length > 0 && t.length <= MAX_TAG_LEN)
     )
   ).slice(0, MAX_TAGS_PER_TASK)
@@ -437,7 +441,7 @@ export async function updateTask(userId: string, id: string, input: unknown) {
 export async function completeTask(userId: string, id: string) {
   const task = await prisma.task.findFirst({
     where: { id, userId },
-    include: { recurrence: true },
+    include: { recurrence: true, reminders: { select: { id: true, triggerAt: true } } },
   })
   if (!task) throw notFound("Task not found")
 
@@ -454,6 +458,14 @@ export async function completeTask(userId: string, id: string) {
           ? new Date(next.getTime() - (task.dueDate.getTime() - task.startDate.getTime()))
           : task.startDate
 
+      // Move the reminders with the task and re-arm them; otherwise they stay
+      // pinned to the occurrence that just passed and stay marked dispatched.
+      const reminderMoves = shiftedReminders(
+        task.reminders,
+        task.dueDate ?? task.startDate,
+        next,
+      )
+
       await prisma.$transaction([
         prisma.task.update({
           where: { id },
@@ -463,6 +475,12 @@ export async function completeTask(userId: string, id: string) {
           where: { id: task.recurrence.id },
           data: { completedCount: { increment: 1 } },
         }),
+        ...reminderMoves.map((r) =>
+          prisma.reminder.update({
+            where: { id: r.id },
+            data: { triggerAt: r.triggerAt, dispatchedAt: null },
+          }),
+        ),
       ])
 
       const rolled = await prisma.task.findFirst({ where: { id, userId }, include: TASK_INCLUDE })
@@ -482,10 +500,17 @@ export async function deleteTask(userId: string, id: string) {
   const existing = await prisma.task.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Task not found")
 
+  // Capture the subtasks BEFORE the delete: the cascade removes them too, and a
+  // client holds each one as its own row, so each needs its own tombstone.
+  const subtaskIds = (
+    await prisma.task.findMany({ where: { parentTaskId: id, userId }, select: { id: true } })
+  ).map((t) => t.id)
+
   await prisma.task.delete({ where: { id } })
   if (existing.recurrenceId) {
     await prisma.recurrenceRule.delete({ where: { id: existing.recurrenceId } }).catch(() => {})
   }
+  await recordTombstone(userId, "task", [id, ...subtaskIds])
   return { success: true }
 }
 

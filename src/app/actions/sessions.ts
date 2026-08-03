@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
+import { cappedEndTime } from "@/lib/sessionTiming"
+
+// These are "use server" exports, i.e. publicly callable endpoints — the caller's
+// arguments are untrusted even when the only in-app caller passes fixed values.
+// Kept in step with `startSchema` in src/lib/services/sessionService.ts.
+const SESSION_TYPES = ["pomodoro", "short-break", "long-break"] as const
+const MAX_DURATION_SEC = 24 * 60 * 60
 
 export async function startSession(taskId: string | null, type: string, duration: number) {
   const session = await auth()
@@ -11,7 +18,26 @@ export async function startSession(taskId: string | null, type: string, duration
     return { error: "Unauthorized" }
   }
 
+  if (!SESSION_TYPES.includes(type as (typeof SESSION_TYPES)[number])) {
+    return { error: "Invalid session type" }
+  }
+  if (!Number.isInteger(duration) || duration <= 0 || duration > MAX_DURATION_SEC) {
+    return { error: "Invalid duration" }
+  }
+
   try {
+    // If a task was named, ensure the caller owns it — otherwise a focus session
+    // could be attached to another user's task.
+    if (taskId) {
+      const task = await prisma.task.findFirst({
+        where: { id: taskId, userId: session.user.id },
+        select: { id: true },
+      })
+      if (!task) {
+        return { error: "Task not found" }
+      }
+    }
+
     const focusSession = await prisma.focusSession.create({
       data: {
         type,
@@ -30,7 +56,7 @@ export async function startSession(taskId: string | null, type: string, duration
   }
 }
 
-export async function completeSession(sessionId: string, endTime: Date) {
+export async function completeSession(sessionId: string) {
   const authSession = await auth()
 
   if (!authSession?.user?.id) {
@@ -51,7 +77,12 @@ export async function completeSession(sessionId: string, endTime: Date) {
       where: { id: sessionId },
       data: {
         status: "completed",
-        endTime
+        // Stamped server-side AND capped at the planned duration. Focus minutes are
+        // derived as endTime - startTime, and the client countdown is tick-based, so
+        // a suspended laptop or a throttled background tab finishes the timer late
+        // and would otherwise record one "25-minute" pomodoro spanning hours into
+        // every focus metric.
+        endTime: cappedEndTime(existingSession.startTime, existingSession.duration)
       }
     })
 

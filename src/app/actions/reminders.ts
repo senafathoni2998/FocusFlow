@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
+import { dueReminderWhere, DUE_REMINDER_TAKE } from "@/lib/reminderWindow"
 
 /**
  * Reminder dispatch queries. The in-app ReminderDispatcher (a client component
@@ -18,10 +19,14 @@ export async function getDueReminders() {
   if (!userId) return []
 
   try {
+    // Bounds live in lib/reminderWindow.ts so this and the mobile service cannot
+    // drift again — they already had, and the unbounded copy was the one the
+    // Android notification poller called.
     return await prisma.reminder.findMany({
-      where: { userId, dispatchedAt: null, triggerAt: { lte: new Date() } },
+      where: dueReminderWhere(userId),
       orderBy: { triggerAt: "asc" },
       include: { task: { select: { id: true, title: true } } },
+      take: DUE_REMINDER_TAKE,
     })
   } catch {
     return []

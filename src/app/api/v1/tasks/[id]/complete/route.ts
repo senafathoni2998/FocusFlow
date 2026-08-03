@@ -1,5 +1,6 @@
 import { handleRoute, ok } from "@/lib/apiResponse"
 import { requireApiUser } from "@/lib/apiAuth"
+import { withIdempotency } from "@/lib/idempotency"
 import { completeTask } from "@/lib/services/taskService"
 
 export const runtime = "nodejs"
@@ -11,5 +12,10 @@ export const runtime = "nodejs"
 export const POST = handleRoute(async (req, ctx) => {
   const userId = await requireApiUser(req)
   const { id } = await ctx.params
-  return ok(await completeTask(userId, id))
+  // Not idempotent for a RECURRING task: each call rolls it to the next
+  // occurrence and increments completedCount, so a retried request skips an
+  // occurrence the user never did.
+  return withIdempotency(req, userId, `tasks/${id}/complete`, null, async () =>
+    ok(await completeTask(userId, id)),
+  )
 })

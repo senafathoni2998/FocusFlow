@@ -1,5 +1,6 @@
 import { handleRoute, ok, readJson } from "@/lib/apiResponse"
 import { requireApiUser } from "@/lib/apiAuth"
+import { withIdempotency } from "@/lib/idempotency"
 import { getGoals, createGoal } from "@/lib/services/goalService"
 
 export const runtime = "nodejs"
@@ -14,5 +15,7 @@ export const GET = handleRoute(async (req) => {
 export const POST = handleRoute(async (req) => {
   const userId = await requireApiUser(req)
   const body = await readJson(req)
-  return ok({ goal: await createGoal(userId, body) }, 201)
+  return withIdempotency(req, userId, "goals", body, async () =>
+    ok({ goal: await createGoal(userId, body) }, 201),
+  )
 })

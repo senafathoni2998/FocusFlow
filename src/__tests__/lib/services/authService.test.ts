@@ -71,7 +71,7 @@ beforeEach(() => {
 
 describe("authService.registerUser", () => {
   it("creates a user and returns a token pair", async () => {
-    prisma.user.findUnique.mockResolvedValue(null)
+    prisma.user.findFirst.mockResolvedValue(null)
     prisma.user.create.mockResolvedValue({ id: "u1", email: "a@b.com", name: "A" })
 
     const res = await registerUser({ email: "a@b.com", password: "secret123", name: "A" })
@@ -83,11 +83,25 @@ describe("authService.registerUser", () => {
   })
 
   it("rejects a duplicate email with 409", async () => {
-    prisma.user.findUnique.mockResolvedValue({ id: "existing" })
+    prisma.user.findFirst.mockResolvedValue({ id: "existing" })
     await expect(registerUser({ email: "a@b.com", password: "secret123" })).rejects.toMatchObject({
       status: 409,
     })
     expect(prisma.user.create).not.toHaveBeenCalled()
+  })
+
+  it("stores the email lower-cased and checks duplicates case-insensitively", async () => {
+    prisma.user.findFirst.mockResolvedValue(null)
+    prisma.user.create.mockResolvedValue({ id: "u2", email: "sena@gmail.com", name: null })
+
+    await registerUser({ email: "  Sena@Gmail.COM ", password: "secret123" })
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: { email: { equals: "sena@gmail.com", mode: "insensitive" } },
+    })
+    expect(prisma.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ email: "sena@gmail.com" }) }),
+    )
   })
 
   it("rejects an invalid email (validation)", async () => {
@@ -102,7 +116,7 @@ describe("authService.registerUser", () => {
 describe("authService.loginUser", () => {
   it("returns tokens for correct credentials", async () => {
     const hashed = await hash("secret123", 10)
-    prisma.user.findUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "A", password: hashed })
+    prisma.user.findFirst.mockResolvedValue({ id: "u1", email: "a@b.com", name: "A", password: hashed })
 
     const res = await loginUser({ email: "a@b.com", password: "secret123" })
     expect(res.user.id).toBe("u1")
@@ -111,7 +125,7 @@ describe("authService.loginUser", () => {
 
   it("rejects a wrong password with 401", async () => {
     const hashed = await hash("secret123", 10)
-    prisma.user.findUnique.mockResolvedValue({ id: "u1", email: "a@b.com", name: "A", password: hashed })
+    prisma.user.findFirst.mockResolvedValue({ id: "u1", email: "a@b.com", name: "A", password: hashed })
 
     await expect(loginUser({ email: "a@b.com", password: "wrong" })).rejects.toMatchObject({
       status: 401,
@@ -119,16 +133,31 @@ describe("authService.loginUser", () => {
   })
 
   it("rejects an unknown email with 401 (no user enumeration)", async () => {
-    prisma.user.findUnique.mockResolvedValue(null)
+    prisma.user.findFirst.mockResolvedValue(null)
     await expect(loginUser({ email: "ghost@b.com", password: "secret123" })).rejects.toMatchObject({
       status: 401,
     })
   })
 })
 
+describe("authService.loginUser — email casing", () => {
+  it("finds the account regardless of the case the user types", async () => {
+    const hashed = await hash("secret123", 10)
+    prisma.user.findFirst.mockResolvedValue({ id: "u1", email: "sena@gmail.com", name: "S", password: hashed })
+
+    const res = await loginUser({ email: "SENA@Gmail.com", password: "secret123" })
+
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: { email: { equals: "sena@gmail.com", mode: "insensitive" } },
+    })
+    expect(res.user.id).toBe("u1")
+  })
+})
+
 describe("authService.refreshTokens", () => {
   it("issues a fresh pair for a valid refresh token", async () => {
     const refreshToken = await signRefreshToken("u5")
+    // Looked up by id, not email — findUnique, not the case-insensitive helper.
     prisma.user.findUnique.mockResolvedValue({ id: "u5", email: "e@e.com", name: null })
 
     const res = await refreshTokens({ refreshToken })

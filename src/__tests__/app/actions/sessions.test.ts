@@ -23,6 +23,9 @@ jest.mock("@/lib/prisma", () => ({
       update: jest.fn(),
       findMany: jest.fn(),
     },
+    task: {
+      findFirst: jest.fn(),
+    },
   },
 }))
 
@@ -87,10 +90,16 @@ describe("Session Actions", () => {
         userId: "user-123",
         taskId: "task-1"
       }
+      mockPrisma.task.findFirst.mockResolvedValue({ id: "task-1" })
       mockPrisma.focusSession.create.mockResolvedValue(newSession)
 
       const result = await startSession("task-1", "pomodoro", 25)
 
+      // The named task must be proven to belong to the caller first.
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith({
+        where: { id: "task-1", userId: "user-123" },
+        select: { id: true },
+      })
       expect(mockPrisma.focusSession.create).toHaveBeenCalledWith({
         data: {
           type: "pomodoro",
@@ -162,22 +171,51 @@ describe("Session Actions", () => {
       mockAuth.mockResolvedValue(mockSession)
       mockPrisma.focusSession.create.mockResolvedValue({
         id: "session-1",
-        type: "custom",
-        duration: 60,
+        type: "short-break",
+        duration: 300,
         status: "running",
         startTime: new Date(),
         userId: "user-123",
         taskId: null
       })
 
-      await startSession(null, "custom", 60)
+      await startSession(null, "short-break", 300)
 
       expect(mockPrisma.focusSession.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          type: "custom",
-          duration: 60
+          type: "short-break",
+          duration: 300
         })
       })
+    })
+
+    it("rejects a session type outside the known set", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+
+      const result = await startSession(null, "custom", 60)
+
+      expect(result).toEqual({ error: "Invalid session type" })
+      expect(mockPrisma.focusSession.create).not.toHaveBeenCalled()
+    })
+
+    it("rejects a non-positive or absurd duration", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+
+      expect(await startSession(null, "pomodoro", 0)).toEqual({ error: "Invalid duration" })
+      expect(await startSession(null, "pomodoro", -1)).toEqual({ error: "Invalid duration" })
+      expect(await startSession(null, "pomodoro", 25.5)).toEqual({ error: "Invalid duration" })
+      expect(await startSession(null, "pomodoro", 24 * 60 * 60 + 1)).toEqual({ error: "Invalid duration" })
+      expect(mockPrisma.focusSession.create).not.toHaveBeenCalled()
+    })
+
+    it("refuses to attach a session to a task the caller does not own", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.task.findFirst.mockResolvedValue(null)
+
+      const result = await startSession("someone-elses-task", "pomodoro", 1500)
+
+      expect(result).toEqual({ error: "Task not found" })
+      expect(mockPrisma.focusSession.create).not.toHaveBeenCalled()
     })
   })
 
@@ -234,19 +272,33 @@ describe("Session Actions", () => {
       }
       mockPrisma.focusSession.update.mockResolvedValue(updatedSession)
 
-      const result = await completeSession("session-1", endTime)
+      const result = await completeSession("session-1")
 
       expect(mockPrisma.focusSession.findFirst).toHaveBeenCalledWith({
         where: { id: "session-1", userId: "user-123" }
       })
+      // endTime is stamped server-side; a caller-supplied value would let focus
+      // minutes (dashboard, weekly review, task actualMin) be forged.
       expect(mockPrisma.focusSession.update).toHaveBeenCalledWith({
         where: { id: "session-1" },
         data: {
           status: "completed",
-          endTime
+          endTime: expect.any(Date)
         }
       })
       expect(result).toEqual({ success: true, session: updatedSession })
+    })
+
+    it("ignores any endTime the caller tries to supply", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      mockPrisma.focusSession.findFirst.mockResolvedValue({ id: "session-1", userId: "user-123" })
+      mockPrisma.focusSession.update.mockResolvedValue({ id: "session-1" })
+
+      const forged = new Date("2030-01-01T00:00:00Z")
+      await (completeSession as unknown as (id: string, end?: Date) => Promise<unknown>)("session-1", forged)
+
+      const call = mockPrisma.focusSession.update.mock.calls.at(-1)![0]
+      expect(call.data.endTime).not.toEqual(forged)
     })
 
     it("should revalidate dashboard path after completing session", async () => {
