@@ -66,8 +66,12 @@ export function computeHabitStats(habit: Habit, now: Date = new Date()): HabitSt
   const todayAmount = amounts.get(localDayKey(now)) ?? 0
   const todayDone = isSatisfied(habit, todayAmount)
 
+  // Derived from the capped check-in slice unless the fetcher supplied an exact
+  // lifetime count — see Habit.totalCheckInDays. Without that, this figure
+  // silently stops growing once a habit outlives the fetch cap.
   let totalDays = 0
   for (const [, amt] of amounts) if (isSatisfied(habit, amt)) totalDays++
+  if (typeof habit.totalCheckInDays === "number") totalDays = habit.totalCheckInDays
 
   // ---- Weekly habits: score by WEEK, not by day. A week (Sunday-anchored,
   // local) is "satisfied" once it has >= weeklyTarget satisfied days; streaks

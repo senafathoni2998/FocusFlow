@@ -46,7 +46,10 @@ export async function getDashboard(userId: string) {
     if (t.completedAt && t.status === "completed") {
       const c = new Date(t.completedAt)
       if (c >= todayStart && c < tomorrowStart) completedToday++
-      if (c >= weekAgo) completedThisWeek++
+      // Upper-bounded like completedToday. No write path can produce a future
+      // completedAt today (every one is server-stamped), but an unbounded
+      // comparison would count one the moment an import or backfill could.
+      if (c >= weekAgo && c < tomorrowStart) completedThisWeek++
     }
   }
 

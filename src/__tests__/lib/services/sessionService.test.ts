@@ -20,7 +20,15 @@ const prisma = (global as any).__mockPrismaClient
 
 // resetAllMocks (not clearAllMocks) also drains mockResolvedValueOnce queues so a
 // value queued by one test can never leak into the next.
-beforeEach(() => jest.resetAllMocks())
+beforeEach(() => {
+  jest.resetAllMocks()
+  // startSession first closes out the caller's OWN running sessions whose planned
+  // end has already passed, so these two are on its path. Default to "nothing to
+  // reap" and let individual tests override.
+  prisma.focusSession.findMany.mockResolvedValue([])
+  prisma.focusSession.updateMany = prisma.focusSession.updateMany ?? jest.fn()
+  prisma.focusSession.updateMany.mockResolvedValue({ count: 0 })
+})
 
 describe("sessionService.startSession", () => {
   it("creates a running session with the default type and no task", async () => {

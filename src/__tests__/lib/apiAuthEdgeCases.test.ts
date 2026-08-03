@@ -250,15 +250,22 @@ describe("missing signing secret", () => {
     await expect(signAccessToken("u1")).resolves.toEqual(expect.stringContaining("mock."))
   })
 
-  it("verification reports a 401 rather than a 500 when the server is misconfigured", async () => {
-    // Current behaviour: requireApiUser catches EVERYTHING from verify(), so a
-    // missing secret looks to the client like a bad token. See suspectedDefects.
+  it("propagates a missing signing secret instead of blaming the token", async () => {
+    // A bare catch made a misconfigured server tell every client its credentials
+    // were invalid — and the Flutter app answered by discarding them and
+    // demanding a re-login it could never complete, while the real cause stayed
+    // invisible. It must surface as a 500, not a 401.
     const token = mockToken({
       sub: "u1",
       iss: "focusflow",
       aud: "focusflow-mobile",
       exp: 9_999_999_999,
     })
-    await expect(requireApiUser(reqWith(`Bearer ${token}`))).rejects.toMatchObject({ status: 401 })
+
+    const err = await requireApiUser(reqWith(`Bearer ${token}`)).catch((e) => e)
+
+    expect(err).toBeInstanceOf(Error)
+    expect((err as { status?: number }).status).toBeUndefined()
+    expect((err as Error).message).toMatch(/NEXTAUTH_SECRET/)
   })
 })

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { z } from "zod"
+import { satisfiedDayCounts } from "@/lib/habitTotals"
 
 /**
  * Habit CRUD + daily check-ins. Follows the app convention:
@@ -47,12 +48,17 @@ export async function getHabits() {
   if (!userId) return []
 
   try {
-    return await prisma.habit.findMany({
+    const habits = await prisma.habit.findMany({
       where: { userId, archived: false },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       // Cover the 3-year current-streak window in habitStats (366*3 days).
       include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
     })
+    // Attach the exact lifetime count so computeHabitStats does not derive it
+    // from the capped slice. Done here rather than at the six call sites, which
+    // all take a Habit and would otherwise each need threading.
+    const totals = await satisfiedDayCounts(habits)
+    return habits.map((h) => ({ ...h, totalCheckInDays: totals.get(h.id) }))
   } catch (error) {
     return []
   }

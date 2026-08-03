@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { notFound, badRequest } from "@/lib/apiResponse"
+import { satisfiedDayCounts } from "@/lib/habitTotals"
 import { computeHabitStats } from "@/lib/habitStats"
 import type { Habit as HabitShape } from "@/types/habit"
 
@@ -65,9 +66,15 @@ async function listHabits(userId: string, archived: boolean) {
   // response: the Flutter client has zero readers for them (it renders the
   // server-computed `stats`, per DECISIONS.md B6), so shipping up to 1200 rows per
   // habit added roughly a megabyte of uncompressed payload to every Habits tab.
+  // Lifetime totals come from a count, not the capped slice — see habitTotals.
+  const totals = await satisfiedDayCounts(habits)
   return habits.map(({ checkIns, ...rest }) => ({
     ...rest,
-    stats: computeHabitStats({ ...rest, checkIns } as unknown as HabitShape),
+    stats: computeHabitStats({
+      ...rest,
+      checkIns,
+      totalCheckInDays: totals.get(rest.id),
+    } as unknown as HabitShape),
   }))
 }
 
@@ -149,13 +156,20 @@ export async function checkInHabit(userId: string, habitId: string, input: unkno
     where: { id: habitId, userId },
     include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
   })
+  // The exact total matters here too: without it, totalDays would differ between
+  // this response and the next list fetch, so the number would visibly jump.
+  const totals = updated ? await satisfiedDayCounts([updated]) : null
   return {
     success: true,
     // Same projection as getHabits: compute from checkIns, then drop them.
     habit: updated
       ? (({ checkIns, ...rest }) => ({
           ...rest,
-          stats: computeHabitStats({ ...rest, checkIns } as unknown as HabitShape),
+          stats: computeHabitStats({
+            ...rest,
+            checkIns,
+            totalCheckInDays: totals?.get(rest.id),
+          } as unknown as HabitShape),
         }))(updated)
       : null,
   }

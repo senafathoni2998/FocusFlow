@@ -58,6 +58,10 @@ jest.mock("@/lib/services/sessionService", () => ({
   startSession: jest.fn(),
   completeSession: jest.fn(),
   cancelSession: jest.fn(),
+  // The route imports this bound for its ?days check. Omitting it from the mock
+  // makes it `undefined`, and `n > undefined` is always false — so the upper
+  // bound silently stops being enforced and the test passes for the wrong reason.
+  MAX_SESSION_DAYS: 366,
 }))
 
 import { z } from "zod"
@@ -135,13 +139,34 @@ describe("GET /api/v1/sessions", () => {
     expect(getUserSessions).toHaveBeenCalledWith("u1", 7)
   })
 
-  it("falls back to 30 days when ?days is not a number", async () => {
+  it("uses 30 days when ?days is absent", async () => {
     ;(getUserSessions as jest.Mock).mockResolvedValue([])
-    await GET(
-      req(`Bearer ${await signAccessToken("u1")}`, { url: "http://localhost/api/v1/sessions?days=lots" }),
-      noCtx,
-    )
+    await GET(req(`Bearer ${await signAccessToken("u1")}`), noCtx)
     expect(getUserSessions).toHaveBeenCalledWith("u1", 30)
+  })
+
+  it("rejects a ?days the caller got wrong instead of guessing", async () => {
+    // Silently falling back to 30 hid the mistake; a negative value was worse
+    // still, since it put startDate in the FUTURE and returned an empty 200 that
+    // looked like "you have no sessions".
+    const token = await signAccessToken("u1")
+    for (const bad of ["lots", "-5", "0", "1.5", "100000"]) {
+      const res = await GET(
+        req(`Bearer ${token}`, { url: `http://localhost/api/v1/sessions?days=${bad}` }),
+        noCtx,
+      )
+      expect(res.status).toBe(400)
+    }
+    expect(getUserSessions).not.toHaveBeenCalled()
+  })
+
+  it("accepts the bounds of the allowed window", async () => {
+    ;(getUserSessions as jest.Mock).mockResolvedValue([])
+    const token = await signAccessToken("u1")
+    await GET(req(`Bearer ${token}`, { url: "http://localhost/api/v1/sessions?days=1" }), noCtx)
+    await GET(req(`Bearer ${token}`, { url: "http://localhost/api/v1/sessions?days=366" }), noCtx)
+    expect(getUserSessions).toHaveBeenNthCalledWith(1, "u1", 1)
+    expect(getUserSessions).toHaveBeenNthCalledWith(2, "u1", 366)
   })
 })
 

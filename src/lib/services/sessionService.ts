@@ -21,6 +21,18 @@ export async function startSession(userId: string, input: unknown) {
     const task = await prisma.task.findFirst({ where: { id: v.taskId, userId }, select: { id: true } })
     if (!task) throw notFound("Task not found")
   }
+  // Close out the caller's OWN sessions whose planned end has already passed.
+  // Nothing reaps them otherwise, so a flaky client that retries a start leaves
+  // "running" rows that are never completed or cancelled and quietly inflate the
+  // session counts and the AI-insights payload.
+  //
+  // Bounded by startTime + duration rather than sweeping every running row: a
+  // session still inside its own window may be genuinely running on another
+  // device, and cancelling that would be worse than the leak. One past its
+  // planned end can never become a valid completion anyway — cappedEndTime would
+  // clamp it to exactly this instant.
+  await reapExpiredRunning(userId)
+
   return prisma.focusSession.create({
     data: {
       type: v.type,
@@ -30,6 +42,27 @@ export async function startSession(userId: string, input: unknown) {
       userId,
       taskId: v.taskId ?? null,
     },
+  })
+}
+
+/**
+ * Cancel this user's running sessions that are already past `startTime + duration`.
+ * Uses a raw comparison because Prisma cannot filter one column against another.
+ */
+async function reapExpiredRunning(userId: string) {
+  const stale = await prisma.focusSession.findMany({
+    where: { userId, status: "running" },
+    select: { id: true, startTime: true, duration: true },
+  })
+  const now = Date.now()
+  const expired = stale
+    .filter((s) => new Date(s.startTime).getTime() + s.duration * 1000 <= now)
+    .map((s) => s.id)
+  if (expired.length === 0) return
+
+  await prisma.focusSession.updateMany({
+    where: { id: { in: expired }, userId, status: "running" },
+    data: { status: "cancelled", endTime: new Date() },
   })
 }
 
@@ -75,7 +108,13 @@ export async function cancelSession(userId: string, id: string) {
   return { success: true }
 }
 
+/** Upper bound on the history window, so no caller can ask for an unbounded scan. */
+export const MAX_SESSION_DAYS = 366
+
 export async function getUserSessions(userId: string, days = 30) {
+  // Clamped here as well as at the route, so the service is safe for any future
+  // caller rather than trusting each one to validate.
+  days = Number.isInteger(days) ? Math.min(Math.max(days, 1), MAX_SESSION_DAYS) : 30
   const startDate = new Date()
   startDate.setDate(startDate.getDate() - days)
   return prisma.focusSession.findMany({

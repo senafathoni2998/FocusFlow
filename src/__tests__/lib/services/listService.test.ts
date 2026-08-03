@@ -138,15 +138,14 @@ describe("listService.updateList", () => {
     expect(prisma.list.update.mock.calls[1][0].data).toEqual({ name: "Only name" })
   })
 
-  it("currently issues an empty write for a body with no updatable fields", async () => {
-    // Documented as current behaviour: `{}` validates, so the list is written with
-    // no changes, bumping updatedAt for nothing.
-    prisma.list.findFirst.mockResolvedValue({ id: "l1" })
-    prisma.list.update.mockResolvedValue({ id: "l1" })
+  it("writes nothing for a body with no updatable fields", async () => {
+    // Every field is optional so `{}` validates, but writing it bumped updatedAt
+    // for a request that changed nothing — and updatedAt is the archived views'
+    // sort key, so a no-op PATCH could reshuffle a list.
+    prisma.list.findFirst.mockResolvedValue({ id: "l1", name: "Work" })
 
-    await updateList("u1", "l1", {})
-
-    expect(prisma.list.update).toHaveBeenCalledWith({ where: { id: "l1" }, data: {} })
+    await expect(updateList("u1", "l1", {})).resolves.toEqual({ id: "l1", name: "Work" })
+    expect(prisma.list.update).not.toHaveBeenCalled()
   })
 
   it("rejects an over-long colour value", async () => {

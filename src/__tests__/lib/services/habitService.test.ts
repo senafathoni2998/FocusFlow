@@ -53,6 +53,9 @@ beforeEach(() => {
     findUnique: jest.fn(),
     upsert: jest.fn().mockResolvedValue({}),
     delete: jest.fn().mockResolvedValue({}),
+    // satisfiedDayCounts: the exact lifetime total, counted rather than derived
+    // from the capped check-in slice.
+    groupBy: jest.fn().mockResolvedValue([]),
   }
 })
 
@@ -89,6 +92,8 @@ describe("habitService.getHabits", () => {
       },
     ])
 
+    prisma.habitCheckIn.groupBy.mockResolvedValue([{ habitId: "h1", _count: { _all: 2 } }])
+
     const [habit] = await getHabits("u1")
 
     expect(habit).not.toHaveProperty("checkIns")
@@ -96,6 +101,42 @@ describe("habitService.getHabits", () => {
     expect(habit.stats.currentStreak).toBe(2)
     expect(habit.stats.totalDays).toBe(2)
     expect(habit.stats.streakUnit).toBe("day")
+  })
+
+  it("takes totalDays from the exact count, not the capped check-in slice", async () => {
+    // checkIns is fetched with take:1200, so a habit older than that would report
+    // a frozen lifetime total if the number were derived from the array. The
+    // count says 1500 while the slice holds one row — the count must win.
+    prisma.habit.findMany.mockResolvedValue([
+      {
+        id: "h1",
+        name: "Read",
+        goalType: "achieve",
+        targetAmount: 1,
+        frequencyType: "daily",
+        weekdays: [],
+        archived: false,
+        createdAt: new Date(Date.now() - 2000 * 86400000),
+        checkIns: [{ id: "c1", date: utcDayFromLocalOffset(0), amount: 1 }],
+      },
+    ])
+    prisma.habitCheckIn.groupBy.mockResolvedValue([{ habitId: "h1", _count: { _all: 1500 } }])
+
+    const [habit] = await getHabits("u1")
+
+    expect(habit.stats.totalDays).toBe(1500)
+  })
+
+  it("counts only days that clear an amount habit's target", async () => {
+    prisma.habit.findMany.mockResolvedValue([
+      { id: "h1", name: "Water", goalType: "amount", targetAmount: 8, frequencyType: "daily", weekdays: [], archived: false, createdAt: new Date(), checkIns: [] },
+    ])
+    prisma.habitCheckIn.groupBy.mockResolvedValue([{ habitId: "h1", _count: { _all: 4 } }])
+
+    await getHabits("u1")
+
+    // The threshold is the habit's targetAmount, not a bare 1.
+    expect(prisma.habitCheckIn.groupBy.mock.calls[0][0].where.amount).toEqual({ gte: 8 })
   })
 })
 

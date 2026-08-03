@@ -42,6 +42,11 @@ export async function updateList(userId: string, id: string, input: unknown) {
   }
   if (v.color !== undefined) data.color = v.color
 
+  // Every field is optional, so `{}` validates. Writing it anyway bumped
+  // updatedAt for a request that changed nothing — and updatedAt is what the
+  // archived views order by, so a no-op PATCH could reshuffle a list.
+  if (Object.keys(data).length === 0) return existing
+
   return prisma.list.update({ where: { id }, data })
 }
 

@@ -19,6 +19,7 @@ const mockPrismaClient = {
     findFirst: jest.fn(),
     findMany: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
   },
   $disconnect: jest.fn(),
 }

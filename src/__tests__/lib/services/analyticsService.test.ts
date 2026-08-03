@@ -138,12 +138,6 @@ describe("analyticsService.getDashboard — completion windows", () => {
     expect(tasks.completedToday).toBe(2)
   })
 
-  /**
-   * Pins CURRENT behaviour, which looks wrong: the tallies key off `completedAt`
-   * alone, and taskService stamps completedAt for BOTH terminal statuses
-   * (`completed` and `wont-do`). So abandoning a task increments the "completed"
-   * numbers. Reported as a suspected defect rather than fixed here.
-   */
   it("does not count abandoned 'wont-do' tasks as completions", async () => {
     // Both write paths stamp completedAt for ANY terminal status, and
     // TERMINAL_STATUSES includes "wont-do" — so keying off completedAt alone
@@ -176,15 +170,15 @@ describe("analyticsService.getDashboard — completion windows", () => {
     expect(tasks.completedToday).toBe(1)
   })
 
-  // completedThisWeek has no upper bound (`c >= weekAgo`), so a completedAt in the
-  // future — clock skew between the app server and Postgres, or an imported task —
-  // still counts. Pinned as current behaviour; flagged as a suspected defect.
-  it("currently counts a future completedAt toward completedThisWeek", async () => {
+  it("does not count a completedAt in the future", async () => {
+    // No write path can produce one today — every completedAt is server-stamped —
+    // but completedThisWeek had no upper bound at all, unlike completedToday, so
+    // the first import or backfill would have counted it.
     arrange([{ status: "completed", dueDate: null, completedAt: new Date(2027, 0, 1) }])
 
     const { tasks } = await getDashboard("u1")
 
-    expect(tasks.completedThisWeek).toBe(1)
+    expect(tasks.completedThisWeek).toBe(0)
     expect(tasks.completedToday).toBe(0)
   })
 })

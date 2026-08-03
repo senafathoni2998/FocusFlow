@@ -16,6 +16,7 @@ jest.mock("@/lib/prisma", () => ({
       findUnique: jest.fn(),
       upsert: jest.fn(),
       delete: jest.fn(),
+      groupBy: jest.fn(),
     },
   },
 }))
@@ -54,6 +55,9 @@ describe("Habit Actions", () => {
     it("returns the user's active habits with check-ins", async () => {
       mockAuth.mockResolvedValue(session)
       ;(mockPrisma.habit.findMany as jest.Mock).mockResolvedValue([{ id: "h1" }])
+      ;(mockPrisma.habitCheckIn.groupBy as jest.Mock).mockResolvedValue([
+        { habitId: "h1", _count: { _all: 7 } },
+      ])
       const res = await getHabits()
       expect(mockPrisma.habit.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -61,7 +65,19 @@ describe("Habit Actions", () => {
           include: { checkIns: { orderBy: { date: "desc" }, take: 1200 } },
         })
       )
-      expect(res).toEqual([{ id: "h1" }])
+      // The exact lifetime total rides along, so the six components that call
+      // computeHabitStats get it without each having to fetch it themselves.
+      expect(res).toEqual([{ id: "h1", totalCheckInDays: 7 }])
+    })
+
+    it("reports zero for a habit with no qualifying check-ins", async () => {
+      // groupBy omits empty habits; leaving the field undefined would silently
+      // fall back to counting the capped array.
+      mockAuth.mockResolvedValue(session)
+      ;(mockPrisma.habit.findMany as jest.Mock).mockResolvedValue([{ id: "h1" }])
+      ;(mockPrisma.habitCheckIn.groupBy as jest.Mock).mockResolvedValue([])
+
+      expect(await getHabits()).toEqual([{ id: "h1", totalCheckInDays: 0 }])
     })
   })
 
