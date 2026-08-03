@@ -8,6 +8,8 @@
     ".next",
     "src/__tests__",
     "src/__mocks__",
+    "e2e",
+    "playwright.config.ts",
     "jest.config.js",
     "jest.setup.js"
   ]
