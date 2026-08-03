@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { hash } from "bcryptjs"
 import { prisma } from "@/lib/prisma"
 import { findUserByEmail, normalizeEmail } from "@/lib/email"
+import { clientKey, rateLimit, REGISTER_LIMIT } from "@/lib/rateLimit"
 import { z } from "zod"
 
 const signupSchema = z.object({
@@ -12,6 +13,16 @@ const signupSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    // Same cap as the mobile register endpoint — both create accounts and neither
+    // requires a session, so throttling one and not the other protects nothing.
+    const limited = rateLimit(`register:ip:${clientKey(request)}`, REGISTER_LIMIT)
+    if (!limited.allowed) {
+      return NextResponse.json(
+        { error: "Too many attempts. Try again later." },
+        { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      )
+    }
+
     const body = await request.json()
     const { email: rawEmail, password, name } = signupSchema.parse(body)
     // Canonical on write, case-insensitive on the duplicate check — email is a

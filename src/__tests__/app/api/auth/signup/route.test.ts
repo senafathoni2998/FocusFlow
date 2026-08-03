@@ -29,6 +29,7 @@ jest.mock("bcryptjs", () => ({
 
 // Import route after mocks are set up
 import { POST } from "@/app/api/auth/signup/route"
+import { resetRateLimits } from "@/lib/rateLimit"
 
 // Type for global mock prisma
 declare global {
@@ -72,6 +73,9 @@ describe("Signup API Route", () => {
   // Set up default mock behaviors before each test
   beforeEach(() => {
     jest.clearAllMocks()
+    // The limiter's buckets live at module scope, so without this every test
+    // after the fifth would 429 on the shared "unknown" client key.
+    resetRateLimits()
     global.__mockPrismaClient.user.findFirst.mockResolvedValue(null)
     global.__mockPrismaClient.user.create.mockResolvedValue({
       id: "user-123",

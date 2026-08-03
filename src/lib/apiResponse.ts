@@ -15,6 +15,8 @@ import { z } from "zod"
 export class ApiError extends Error {
   status: number
   details?: unknown
+  /** Seconds to advertise via Retry-After (429s only). */
+  retryAfter?: number
   constructor(status: number, message: string, details?: unknown) {
     super(message)
     this.name = "ApiError"
@@ -27,6 +29,13 @@ export const unauthorized = (msg = "Unauthorized") => new ApiError(401, msg)
 export const notFound = (msg = "Not found") => new ApiError(404, msg)
 export const badRequest = (msg = "Invalid input", details?: unknown) =>
   new ApiError(400, msg, details)
+
+/** 429 carrying the seconds until the caller may retry. */
+export function tooManyRequests(retryAfter: number, msg = "Too many attempts. Try again later.") {
+  const err = new ApiError(429, msg)
+  err.retryAfter = retryAfter
+  return err
+}
 
 /** JSON success response. */
 export function ok<T>(data: T, status = 200): NextResponse {
@@ -56,7 +65,11 @@ export function handleRoute(
       return await fn(req, ctx)
     } catch (error) {
       if (error instanceof ApiError) {
-        return fail(error.message, error.status, error.details)
+        const res = fail(error.message, error.status, error.details)
+        if (error.retryAfter != null) {
+          res.headers.set("Retry-After", String(error.retryAfter))
+        }
+        return res
       }
       if (error instanceof z.ZodError) {
         return fail("Invalid input", 400, error.errors)
