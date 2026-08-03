@@ -9,6 +9,7 @@ import {
   TASK_PRIORITIES,
   priorityRankOf,
   isTerminalStatus,
+  ORDER_STEP,
 } from "@/lib/taskConstants"
 import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
 import { normalizeTagName } from "@/lib/tags"
@@ -673,6 +674,72 @@ export async function getTasks() {
     }))
   } catch (error) {
     return []
+  }
+}
+
+/**
+ * Rewrite a whole column's `order` values as `index * ORDER_STEP`.
+ *
+ * `order` is an Int, so the midpoint insert used by drag-and-drop halves the gap
+ * each time: 10/20 -> 15 -> 13 -> 12 -> 11, and the next midpoint rounds to 11 —
+ * the successor's own order. The card then renders on the wrong side of it (the
+ * server breaks ties by createdAt) and that slot becomes permanently
+ * un-insertable, because every further drop produces 11 again. Raising the step
+ * only delays it.
+ *
+ * The client calls this instead of reorderTask once the neighbouring gap is too
+ * small to split, handing over the intended final ORDER of the column. Every id
+ * is ownership-checked and every write happens in one transaction, so a partial
+ * renumber can't leave the board in a state worse than it started.
+ */
+export async function renumberTasks(status: string, orderedIds: string[]) {
+  const session = await auth()
+
+  if (!session?.user?.id) {
+    return { error: "Unauthorized" }
+  }
+
+  if (!TASK_STATUSES.includes(status as never)) {
+    return { error: "Invalid status" }
+  }
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return { error: "Nothing to reorder" }
+  }
+  // A column that large is not a real drag; refuse rather than issue 500 writes.
+  if (orderedIds.length > 500) {
+    return { error: "Too many tasks to reorder at once" }
+  }
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    return { error: "Duplicate task in order" }
+  }
+
+  try {
+    // Every id must belong to the caller. Counting the owned rows is enough:
+    // combined with the duplicate check above, a full match proves the set is
+    // exactly the caller's.
+    const owned = await prisma.task.findMany({
+      where: { id: { in: orderedIds }, userId: session.user.id },
+      select: { id: true },
+    })
+    if (owned.length !== orderedIds.length) {
+      return { error: "Task not found" }
+    }
+
+    await prisma.$transaction(
+      orderedIds.map((id, index) =>
+        prisma.task.update({
+          where: { id },
+          data: { status, order: index * ORDER_STEP },
+        })
+      )
+    )
+
+    revalidatePath("/tasks")
+    revalidatePath("/dashboard")
+    return { success: true, count: orderedIds.length }
+  } catch (error) {
+    console.error("[renumberTasks] Error:", error)
+    return { error: "Failed to reorder tasks" }
   }
 }
 

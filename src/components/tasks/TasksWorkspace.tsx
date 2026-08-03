@@ -13,7 +13,7 @@ import { type DateHorizon, isDateHorizon } from "@/lib/dateHorizon"
 import { canonicalizeQuery } from "@/lib/savedFilters"
 import { isTerminalStatus } from "@/lib/taskConstants"
 import { useTaskUpdates } from "@/hooks/useTaskUpdates"
-import { reorderTask, completeTask } from "@/app/actions/tasks"
+import { reorderTask, renumberTasks, completeTask } from "@/app/actions/tasks"
 import { createList, deleteList } from "@/app/actions/lists"
 import { createSavedFilter, deleteSavedFilter } from "@/app/actions/savedFilters"
 import { deleteTag } from "@/app/actions/tags"
@@ -318,6 +318,33 @@ export default function TasksWorkspace({
     [router]
   )
 
+  /**
+   * The board asks for this when the gap between two neighbours is exhausted and
+   * a midpoint would collide. It hands over the column's intended final order,
+   * and the server respaces the whole column in one transaction.
+   */
+  const handleRenumber = useCallback(
+    (status: string, orderedIds: string[]) => {
+      const positionById = new Map(orderedIds.map((id, i) => [id, i * 10]))
+      setLocalTasks((prev) =>
+        prev.map((t) =>
+          positionById.has(t.id)
+            ? {
+                ...t,
+                status,
+                order: positionById.get(t.id)!,
+                completedAt: isTerminalStatus(status) ? t.completedAt ?? new Date() : null,
+              }
+            : t
+        )
+      )
+      renumberTasks(status, orderedIds).then((res) => {
+        if (res && "error" in res && res.error) router.refresh()
+      })
+    },
+    [router]
+  )
+
   const handleUpdate = useCallback(() => {
     setIsRefreshing(true)
     router.refresh()
@@ -386,6 +413,7 @@ export default function TasksWorkspace({
             <TaskBoard
               tasks={visible}
               onReorder={handleReorder}
+              onRenumber={handleRenumber}
               onUpdate={handleUpdate}
               reorderable={reorderable}
               subtasksByParent={subtasksByParent}

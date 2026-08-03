@@ -46,7 +46,7 @@ jest.mock("next/cache", () => ({
   revalidatePath: jest.fn(),
 }))
 
-import { createTask, updateTask, deleteTask, getTasks, reorderTask, completeTask } from "@/app/actions/tasks"
+import { createTask, updateTask, deleteTask, getTasks, reorderTask, renumberTasks, completeTask } from "@/app/actions/tasks"
 import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 
@@ -1065,6 +1065,88 @@ describe("Task Actions", () => {
 
       expect(result).toEqual({ error: "Invalid order" })
       expect(mockPrisma.task.update).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("renumberTasks", () => {
+    const ids = ["a", "b", "c"]
+    const owned = ids.map((id) => ({ id }))
+
+    it("returns unauthorized without a session", async () => {
+      mockAuth.mockResolvedValue(null)
+
+      expect(await renumberTasks("todo", ids)).toEqual({ error: "Unauthorized" })
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+    })
+
+    it("respaces the column as index * 10 in ONE transaction", async () => {
+      // The whole point: after a renumber every neighbouring gap is 10 again, so
+      // the midpoint insert has room and the slot stops being un-insertable.
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findMany as jest.Mock).mockResolvedValue(owned)
+      ;(mockPrisma.$transaction as jest.Mock).mockResolvedValue([])
+
+      const res = await renumberTasks("todo", ids)
+
+      expect(res).toEqual({ success: true, count: 3 })
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1)
+      expect(mockPrisma.task.update).toHaveBeenNthCalledWith(1, {
+        where: { id: "a" },
+        data: { status: "todo", order: 0 },
+      })
+      expect(mockPrisma.task.update).toHaveBeenNthCalledWith(2, {
+        where: { id: "b" },
+        data: { status: "todo", order: 10 },
+      })
+      expect(mockPrisma.task.update).toHaveBeenNthCalledWith(3, {
+        where: { id: "c" },
+        data: { status: "todo", order: 20 },
+      })
+    })
+
+    it("refuses when any id is not the caller's", async () => {
+      // findMany is already scoped by userId, so a foreign id simply doesn't come
+      // back — a short result set is the ownership failure.
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findMany as jest.Mock).mockResolvedValue([{ id: "a" }, { id: "b" }])
+
+      expect(await renumberTasks("todo", ids)).toEqual({ error: "Task not found" })
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+    })
+
+    it("rejects a status outside TASK_STATUSES", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+
+      expect(await renumberTasks("done", ids)).toEqual({ error: "Invalid status" })
+      expect(mockPrisma.task.findMany).not.toHaveBeenCalled()
+    })
+
+    it("rejects duplicates, which would silently drop a task's position", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+
+      expect(await renumberTasks("todo", ["a", "b", "a"])).toEqual({
+        error: "Duplicate task in order",
+      })
+      expect(mockPrisma.task.findMany).not.toHaveBeenCalled()
+    })
+
+    it("rejects an empty list and an implausibly large one", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+
+      expect(await renumberTasks("todo", [])).toEqual({ error: "Nothing to reorder" })
+      const huge = Array.from({ length: 501 }, (_, i) => `t${i}`)
+      expect(await renumberTasks("todo", huge)).toEqual({
+        error: "Too many tasks to reorder at once",
+      })
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled()
+    })
+
+    it("reports failure rather than leaving the caller believing it persisted", async () => {
+      mockAuth.mockResolvedValue(mockSession)
+      ;(mockPrisma.task.findMany as jest.Mock).mockResolvedValue(owned)
+      ;(mockPrisma.$transaction as jest.Mock).mockRejectedValue(new Error("db down"))
+
+      expect(await renumberTasks("todo", ids)).toEqual({ error: "Failed to reorder tasks" })
     })
   })
 
