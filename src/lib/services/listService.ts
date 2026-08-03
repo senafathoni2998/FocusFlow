@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { notFound, badRequest } from "@/lib/apiResponse"
+import { recordTombstone } from "@/lib/tombstones"
 
 /** List CRUD for the mobile API — mirrors `src/app/actions/lists.ts`. */
 
@@ -55,6 +56,9 @@ export async function deleteList(userId: string, id: string) {
   if (!existing) throw notFound("List not found")
   // onDelete: SetNull re-parents this list's tasks to the Inbox.
   await prisma.list.delete({ where: { id } })
+  // Tasks are re-parented to Inbox (SetNull), not deleted — so only the list
+  // itself gets a tombstone.
+  await recordTombstone(userId, "list", id)
   return { success: true }
 }
 

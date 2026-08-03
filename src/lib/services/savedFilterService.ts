@@ -2,6 +2,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { ApiError, badRequest, notFound } from "@/lib/apiResponse"
 import { canonicalizeQuery } from "@/lib/savedFilters"
+import { recordTombstone } from "@/lib/tombstones"
 
 /**
  * Saved views for the mobile API — mirrors `src/app/actions/savedFilters.ts`.
@@ -60,6 +61,7 @@ export async function deleteSavedFilter(userId: string, id: string) {
   const existing = await prisma.savedFilter.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Saved view not found")
   await prisma.savedFilter.delete({ where: { id } })
+  await recordTombstone(userId, "savedFilter", id)
   return { success: true }
 }
 

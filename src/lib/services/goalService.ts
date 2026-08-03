@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { notFound, badRequest } from "@/lib/apiResponse"
 import { computeGoalProgress } from "@/lib/goalStats"
 import type { Goal as GoalShape } from "@/types/goal"
+import { recordTombstone } from "@/lib/tombstones"
 
 /**
  * Goal CRUD + progress for the mobile API — mirrors `src/app/actions/goals.ts`.
@@ -156,5 +157,6 @@ export async function deleteGoal(userId: string, id: string) {
   const existing = await prisma.goal.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Goal not found")
   await prisma.goal.delete({ where: { id } })
+  await recordTombstone(userId, "goal", id)
   return { success: true }
 }

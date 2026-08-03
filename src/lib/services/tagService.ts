@@ -2,6 +2,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { ApiError, badRequest, notFound } from "@/lib/apiResponse"
 import { normalizeTagName } from "@/lib/tags"
+import { recordTombstone } from "@/lib/tombstones"
 
 /**
  * Tag reads + delete for the mobile API — mirrors `src/app/actions/tags.ts`. Tags
@@ -55,5 +56,6 @@ export async function deleteTag(userId: string, id: string) {
   if (!existing) throw notFound("Tag not found")
   // Cascades the TaskTag join rows; tasks themselves are untouched.
   await prisma.tag.delete({ where: { id } })
+  await recordTombstone(userId, "tag", id)
   return { success: true }
 }

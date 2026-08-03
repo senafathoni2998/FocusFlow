@@ -4,6 +4,7 @@ import { notFound, badRequest } from "@/lib/apiResponse"
 import { satisfiedDayCounts } from "@/lib/habitTotals"
 import { computeHabitStats } from "@/lib/habitStats"
 import type { Habit as HabitShape } from "@/types/habit"
+import { recordTombstone } from "@/lib/tombstones"
 
 /**
  * Habit CRUD + check-ins for the mobile API — mirrors `src/app/actions/habits.ts`.
@@ -116,6 +117,7 @@ export async function deleteHabit(userId: string, id: string) {
   const existing = await prisma.habit.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Habit not found")
   await prisma.habit.delete({ where: { id } }) // cascades check-ins
+  await recordTombstone(userId, "habit", id)
   return { success: true }
 }
 

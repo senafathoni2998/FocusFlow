@@ -10,6 +10,7 @@ import {
 } from "@/lib/taskConstants"
 import { computeNextOccurrence, isRecurrenceFreq, shiftedReminders } from "@/lib/recurrence"
 import { normalizeTagName } from "@/lib/tags"
+import { recordTombstone } from "@/lib/tombstones"
 
 /**
  * Task domain logic for the mobile API. This mirrors `src/app/actions/tasks.ts`
@@ -499,10 +500,17 @@ export async function deleteTask(userId: string, id: string) {
   const existing = await prisma.task.findFirst({ where: { id, userId } })
   if (!existing) throw notFound("Task not found")
 
+  // Capture the subtasks BEFORE the delete: the cascade removes them too, and a
+  // client holds each one as its own row, so each needs its own tombstone.
+  const subtaskIds = (
+    await prisma.task.findMany({ where: { parentTaskId: id, userId }, select: { id: true } })
+  ).map((t) => t.id)
+
   await prisma.task.delete({ where: { id } })
   if (existing.recurrenceId) {
     await prisma.recurrenceRule.delete({ where: { id: existing.recurrenceId } }).catch(() => {})
   }
+  await recordTombstone(userId, "task", [id, ...subtaskIds])
   return { success: true }
 }
 
