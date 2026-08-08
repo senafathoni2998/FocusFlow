@@ -183,3 +183,45 @@ describe("withIdempotency", () => {
     )
   })
 })
+
+describe("retention", () => {
+  // The table grows by a row per successful create, complete, check-in and
+  // progress bump, and nothing ever removed them — there is no scheduler in this
+  // app, so the prune has to be opportunistic or it will not exist.
+  const NOW = new Date("2026-08-05T12:00:00.000Z")
+
+  beforeEach(() => {
+    jest.resetModules()
+    jest.useFakeTimers().setSystemTime(NOW)
+  })
+  afterEach(() => jest.useRealTimers())
+
+  it("keeps a key for 30 days, NOT the usual 48 hours", async () => {
+    // Load fresh so the once-per-hour guard starts unset.
+    const { withIdempotency } = await import("@/lib/idempotency")
+    prisma.idempotencyKey.create.mockResolvedValue({})
+    prisma.idempotencyKey.update.mockResolvedValue({})
+    prisma.idempotencyKey.deleteMany.mockResolvedValue({ count: 0 })
+
+    await withIdempotency(
+      { headers: new Map([["idempotency-key", "k".repeat(16)]]) } as never,
+      "u1",
+      "tasks",
+      { a: 1 },
+      async () => ({ status: 201, clone: () => ({ json: async () => ({}) }) }) as never,
+    )
+
+    const call = prisma.idempotencyKey.deleteMany.mock.calls.find(
+      (c: [{ where?: { createdAt?: { lt?: Date } } }]) => c[0]?.where?.createdAt?.lt,
+    )
+    expect(call).toBeDefined()
+    const cutoff = call![0].where.createdAt.lt as Date
+    const days = (NOW.getTime() - cutoff.getTime()) / 86_400_000
+    // 48 hours would be WRONG here: the mobile queue holds an op for up to 14
+    // days and retries it with the SAME key that whole time. Prune sooner and
+    // the retry is no longer recognised, so the handler runs again and creates a
+    // duplicate — the exact failure the key exists to prevent.
+    expect(days).toBe(30)
+    expect(days).toBeGreaterThan(14)
+  })
+})

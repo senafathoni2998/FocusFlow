@@ -21,6 +21,42 @@ import { ApiError } from "@/lib/apiResponse"
 
 const HEADER = "idempotency-key"
 
+/**
+ * How long a used key is remembered.
+ *
+ * NOT the usual 48 hours, and the difference matters. The mobile write queue
+ * holds an unsent op for up to 14 days and retries it with the SAME key that
+ * whole time. Prune sooner than that and the server stops recognising the
+ * retry — so it runs the handler again and creates a duplicate, which is the
+ * exact failure the key exists to prevent. Thirty days is double the client's
+ * replay horizon.
+ */
+const RETENTION_DAYS = 30
+
+/** At most one prune per hour per process. */
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000
+let lastPruneMs = 0
+
+/**
+ * Opportunistic, because this app has no scheduler.
+ *
+ * A cron job someone has to remember to install is a cron job that will not
+ * exist, and without one the table grows by a row per successful create,
+ * complete, check-in and progress bump, forever. Fire-and-forget so it never
+ * delays the request that triggered it, and swallowed so a failed prune can
+ * never turn a successful write into an error.
+ */
+function prunePeriodically(): void {
+  const now = Date.now()
+  if (now - lastPruneMs < PRUNE_INTERVAL_MS) return
+  lastPruneMs = now
+  void prisma.idempotencyKey
+    .deleteMany({
+      where: { createdAt: { lt: new Date(now - RETENTION_DAYS * 24 * 60 * 60 * 1000) } },
+    })
+    .catch(() => {})
+}
+
 export function idempotencyKeyFrom(req: Request): string | null {
   const raw = req.headers.get(HEADER)
   if (!raw) return null
@@ -53,6 +89,8 @@ export async function withIdempotency(
 ): Promise<NextResponse> {
   const key = idempotencyKeyFrom(req)
   if (!key) return handler()
+
+  prunePeriodically()
 
   const requestHash = hashBody(body)
 

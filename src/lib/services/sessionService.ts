@@ -12,7 +12,21 @@ const startSchema = z.object({
   taskId: z.string().nullable().optional(),
   type: z.enum(["pomodoro", "short-break", "long-break"]).default("pomodoro"),
   duration: z.number().int().positive().max(24 * 60 * 60),
+  /**
+   * When the session actually began, for a client replaying one it recorded
+   * offline. Omit it and the server stamps now, exactly as before.
+   *
+   * The server used to stamp unconditionally, which made focus sessions
+   * unqueueable: a flight's pomodoros all landed at the instant the wifi
+   * reconnected, putting hours of focus time on the wrong DAY in every
+   * analytics chart, because actualMin and "Focus (7d)" are both derived from
+   * these rows.
+   */
+  startTime: z.string().datetime().optional(),
 })
+
+/** How far back a client may claim a session started. */
+const MAX_BACKDATE_MS = 30 * 24 * 60 * 60 * 1000
 
 export async function startSession(userId: string, input: unknown) {
   const v = startSchema.parse(input)
@@ -38,11 +52,32 @@ export async function startSession(userId: string, input: unknown) {
       type: v.type,
       duration: v.duration,
       status: "running",
-      startTime: new Date(),
+      startTime: clampedStart(v.startTime),
       userId,
       taskId: v.taskId ?? null,
     },
   })
+}
+
+/**
+ * Accept a client's start instant, bounded at both ends.
+ *
+ * Clamped FORWARD to now, because a session cannot have started in the future
+ * and a device with a fast clock would otherwise book focus time into tomorrow.
+ * Clamped BACKWARD to 30 days, which is comfortably past the client queue's own
+ * 14-day expiry — anything older is not a replayed session, and letting it
+ * through would rewrite historical stats for any day the caller chose.
+ */
+function clampedStart(raw: string | undefined): Date {
+  const now = new Date()
+  if (!raw) return now
+  const t = new Date(raw)
+  if (isNaN(t.getTime())) return now
+  if (t.getTime() > now.getTime()) return now
+  if (now.getTime() - t.getTime() > MAX_BACKDATE_MS) {
+    return new Date(now.getTime() - MAX_BACKDATE_MS)
+  }
+  return t
 }
 
 /**
