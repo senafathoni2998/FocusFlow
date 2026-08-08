@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma"
 import { badRequest } from "@/lib/apiResponse"
+import { serializeTasksFor } from "@/lib/services/taskService"
+import { withHabitStats } from "@/lib/services/habitService"
+import { serializeGoals } from "@/lib/services/goalService"
 
 /**
  * Delta sync: everything that changed for one user since a cursor.
@@ -40,6 +43,23 @@ const TASK_INCLUDE = {
   reminders: { select: { id: true, triggerAt: true, dispatchedAt: true } },
 }
 
+/**
+ * EVERY entity here goes out in the SAME shape its list endpoint uses.
+ *
+ * That is not tidiness — it is the whole premise of delta sync. A client merges
+ * `changed.*` into what it already holds from GET /tasks, /habits, /goals, so a
+ * different shape means merging silently degrades rows. This returned raw Prisma
+ * rows, and four things broke on merge: a task's `actualMin` vanished (the
+ * estimate pill read 0), its all-day dates arrived as full instants rather than
+ * `yyyy-MM-dd` (a phone in another timezone renders the wrong DAY — exactly what
+ * toYmdLocal exists to prevent), a habit lost its `stats` (streaks blanked to
+ * zero) and a goal lost its `progress` (every goal at 0%).
+ *
+ * The two includes below exist only to feed those serializers, which strip them.
+ */
+const HABIT_INCLUDE = { checkIns: { orderBy: { date: "desc" as const }, take: 1200 } }
+const GOAL_INCLUDE = { tasks: { select: { status: true, recurrenceId: true } } }
+
 export async function getChanges(userId: string, since: Date | null) {
   // Captured BEFORE the reads. Taking it afterwards would set the next cursor
   // past rows written while these queries ran, losing them for good.
@@ -52,8 +72,8 @@ export async function getChanges(userId: string, since: Date | null) {
       prisma.task.findMany({ where, include: TASK_INCLUDE, orderBy: { updatedAt: "asc" } }),
       prisma.list.findMany({ where, orderBy: { updatedAt: "asc" } }),
       prisma.tag.findMany({ where, orderBy: { updatedAt: "asc" } }),
-      prisma.habit.findMany({ where, orderBy: { updatedAt: "asc" } }),
-      prisma.goal.findMany({ where, orderBy: { updatedAt: "asc" } }),
+      prisma.habit.findMany({ where, include: HABIT_INCLUDE, orderBy: { updatedAt: "asc" } }),
+      prisma.goal.findMany({ where, include: GOAL_INCLUDE, orderBy: { updatedAt: "asc" } }),
       prisma.savedFilter.findMany({ where, orderBy: { updatedAt: "asc" } }),
       prisma.focusSession.findMany({ where, orderBy: { updatedAt: "asc" } }),
       since
@@ -66,17 +86,23 @@ export async function getChanges(userId: string, since: Date | null) {
           Promise.resolve([]),
     ])
 
+  // Serialised AFTER the reads, so the cursor above still predates every row.
+  const [serializedTasks, serializedHabits] = await Promise.all([
+    serializeTasksFor(userId, tasks),
+    withHabitStats(habits),
+  ])
+
   return {
     serverTime: serverTime.toISOString(),
     // Tells the client whether to merge or replace, rather than making it infer
     // that from the absence of a cursor it sent.
     full: since === null,
     changed: {
-      tasks: tasks.map((t) => ({ ...t, tags: t.tags.map((tt) => tt.tag) })),
+      tasks: serializedTasks,
       lists,
       tags,
-      habits,
-      goals,
+      habits: serializedHabits,
+      goals: serializeGoals(goals),
       savedFilters,
       focusSessions: sessions,
     },
