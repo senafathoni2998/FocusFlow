@@ -55,6 +55,32 @@ export async function getHabits(userId: string) {
   return listHabits(userId, false)
 }
 
+/**
+ * Attach the server-computed `stats` to a batch of habit rows.
+ *
+ * Exported for delta sync, which returned raw rows — and the Flutter model
+ * silently substitutes HabitStats.empty() when `stats` is absent, so merging one
+ * blanked a habit's streak and monthly rate to zero until the next full GET.
+ *
+ * NOTE the limitation this does NOT fix: a check-in does not bump the habit's
+ * own `updatedAt`, so a habit whose stats changed will not appear in a delta at
+ * all. Correct when returned; not guaranteed to be returned.
+ */
+export async function withHabitStats<T extends { id: string }>(habits: T[]) {
+  const totals = await satisfiedDayCounts(habits as never)
+  return habits.map((h) => {
+    const { checkIns, ...rest } = h as T & { checkIns?: unknown }
+    return {
+      ...rest,
+      stats: computeHabitStats({
+        ...rest,
+        checkIns,
+        totalCheckInDays: totals.get(rest.id),
+      } as unknown as HabitShape),
+    }
+  })
+}
+
 async function listHabits(userId: string, archived: boolean) {
   const habits = await prisma.habit.findMany({
     where: { userId, archived },
@@ -68,15 +94,7 @@ async function listHabits(userId: string, archived: boolean) {
   // server-computed `stats`, per DECISIONS.md B6), so shipping up to 1200 rows per
   // habit added roughly a megabyte of uncompressed payload to every Habits tab.
   // Lifetime totals come from a count, not the capped slice — see habitTotals.
-  const totals = await satisfiedDayCounts(habits)
-  return habits.map(({ checkIns, ...rest }) => ({
-    ...rest,
-    stats: computeHabitStats({
-      ...rest,
-      checkIns,
-      totalCheckInDays: totals.get(rest.id),
-    } as unknown as HabitShape),
-  }))
+  return withHabitStats(habits)
 }
 
 export async function createHabit(userId: string, input: unknown) {

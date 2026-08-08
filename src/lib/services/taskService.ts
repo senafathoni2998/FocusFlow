@@ -184,13 +184,26 @@ async function actualMinFor(userId: string, taskId: string): Promise<number> {
 
 // ---- Operations ---------------------------------------------------------------
 
-export async function listTasks(userId: string) {
-  const tasks = await prisma.task.findMany({
-    where: { userId },
-    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-    include: TASK_INCLUDE,
-  })
+/**
+ * The wire shape of a task, for EVERY endpoint that returns one.
+ *
+ * Exported so delta sync uses this and not a raw Prisma row. It did the latter,
+ * and the difference was not cosmetic: `actualMin` came back absent (rendering
+ * as 0 in the estimate-vs-actual pill) and the all-day dates came back as full
+ * instants instead of `yyyy-MM-dd`, which is precisely the timezone shift
+ * toYmdLocal exists to prevent. A client merging sync into what it got from
+ * GET /tasks — the entire premise of delta sync — silently degraded both.
+ *
+ * One `actualMin` query for the whole batch, not one per task.
+ */
+export async function serializeTasksFor(userId: string, tasks: unknown[]) {
+  const actualByTask = await actualMinByTask(userId)
+  return tasks.map((t) =>
+    serializeTask(t as RawTask, actualByTask.get((t as RawTask).id) ?? 0),
+  )
+}
 
+async function actualMinByTask(userId: string): Promise<Map<string, number>> {
   const sessions = await prisma.focusSession.findMany({
     where: { userId, status: "completed", type: "pomodoro", taskId: { not: null } },
     select: { taskId: true, startTime: true, endTime: true },
@@ -203,8 +216,16 @@ export async function listTasks(userId: string) {
     )
     if (mins > 0) actualByTask.set(s.taskId, (actualByTask.get(s.taskId) ?? 0) + mins)
   }
+  return actualByTask
+}
 
-  return tasks.map((t) => serializeTask(t as RawTask, actualByTask.get(t.id) ?? 0))
+export async function listTasks(userId: string) {
+  const tasks = await prisma.task.findMany({
+    where: { userId },
+    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    include: TASK_INCLUDE,
+  })
+  return serializeTasksFor(userId, tasks)
 }
 
 export async function getTaskById(userId: string, id: string) {

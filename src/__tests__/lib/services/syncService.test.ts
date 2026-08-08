@@ -48,6 +48,85 @@ describe("parseSince", () => {
   })
 })
 
+describe("the payload shape matches the list endpoints", () => {
+  // Delta sync only works if a client can merge `changed.*` into what it already
+  // has from GET /tasks, /habits, /goals. Sync used to return RAW Prisma rows, so
+  // merging one silently degraded it — these are the four fields that broke.
+
+  it("serialises a task exactly as GET /tasks does", async () => {
+    prisma.task.findMany.mockResolvedValue([
+      {
+        id: "t1",
+        userId: "u1",
+        title: "Buy milk",
+        dueDate: new Date("2026-08-04T00:00:00.000Z"),
+        startDate: null,
+        tags: [{ tag: { id: "tag1", name: "errands" } }],
+        recurrence: null,
+        reminders: [],
+      },
+    ])
+    prisma.focusSession.findMany.mockResolvedValue([
+      {
+        taskId: "t1",
+        startTime: new Date("2026-08-03T10:00:00.000Z"),
+        endTime: new Date("2026-08-03T10:25:00.000Z"),
+      },
+    ])
+
+    const out = await getChanges("u1", null)
+    const task = out.changed.tasks[0] as Record<string, unknown>
+
+    // A bare calendar day, not an instant. Sending the instant makes a phone in
+    // another timezone render the previous or next DAY — the exact shift the
+    // yyyy-MM-dd convention exists to prevent.
+    expect(typeof task.dueDate).toBe("string")
+    expect(task.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    // Derived from completed pomodoros. Absent, the estimate-vs-actual pill on
+    // every synced task reads 0.
+    expect(task.actualMin).toBe(25)
+
+    // Tags flattened out of the join rows.
+    expect(task.tags).toEqual([{ id: "tag1", name: "errands" }])
+  })
+
+  it("attaches habit stats, so a merge cannot blank a streak", async () => {
+    prisma.habit.findMany.mockResolvedValue([
+      { id: "h1", userId: "u1", name: "Read", frequency: "daily", target: 1, checkIns: [] },
+    ])
+    prisma.habitCheckIn = {
+      ...(prisma.habitCheckIn ?? {}),
+      groupBy: jest.fn().mockResolvedValue([]),
+    }
+
+    const out = await getChanges("u1", null)
+    const habit = out.changed.habits[0] as Record<string, unknown>
+    expect(habit.stats).toBeDefined()
+    // And the 1200 check-in rows fetched to compute it are NOT shipped.
+    expect(habit.checkIns).toBeUndefined()
+  })
+
+  it("attaches goal progress, so a merge cannot show every goal at 0%", async () => {
+    prisma.goal.findMany.mockResolvedValue([
+      {
+        id: "g1",
+        userId: "u1",
+        title: "Read 12 books",
+        progressType: "manual",
+        manualProgress: 40,
+        tasks: [],
+      },
+    ])
+
+    const out = await getChanges("u1", null)
+    const goal = out.changed.goals[0] as Record<string, unknown>
+    expect(goal.progress).toBeDefined()
+    expect(goal.taskTotal).toBe(0)
+    expect(goal.tasks).toBeUndefined()
+  })
+})
+
 describe("getChanges", () => {
   it("scopes every collection to the caller", async () => {
     await getChanges("u1", null)

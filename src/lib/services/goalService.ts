@@ -50,13 +50,30 @@ function withProgress<T extends object>(goal: T) {
   return { ...goal, progress: computeGoalProgress(goal as unknown as GoalShape) }
 }
 
+/**
+ * The wire shape of a goal, for every endpoint that returns one in a list.
+ *
+ * Exported for delta sync, which returned raw rows — and Goal.fromJson falls
+ * back to GoalProgress.empty(), so merging one showed every goal at 0%.
+ *
+ * NOTE the limitation this does NOT fix: completing a task changes a
+ * tasks-derived goal's percent without touching the goal's own `updatedAt`, so
+ * that goal will not appear in a delta. Correct when returned; not guaranteed
+ * to be returned.
+ */
+export function serializeGoals<
+  T extends { tasks?: { status: string; recurrenceId: string | null }[] }
+>(goals: T[]) {
+  return goals.map((g) => withProgress(withTaskCounts(g)))
+}
+
 export async function getGoals(userId: string) {
   const goals = await prisma.goal.findMany({
     where: { userId, status: { not: "archived" } },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     include: { tasks: { select: { status: true, recurrenceId: true } } },
   })
-  return goals.map((g) => withProgress(withTaskCounts(g)))
+  return serializeGoals(goals)
 }
 
 export async function getArchivedGoals(userId: string) {
