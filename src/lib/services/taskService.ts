@@ -105,6 +105,17 @@ const createSchema = z.object({
 })
 
 const updateSchema = z.object({
+  /**
+   * The `updatedAt` the caller last saw. Optional: omit it and the write is
+   * last-wins, exactly as before.
+   *
+   * It exists for QUEUED edits. Online, the gap between reading a task and
+   * saving it is about a second and last-wins is invisible. A PATCH queued on a
+   * plane can sit for up to 14 days, and then silently overwrites whatever was
+   * done from the web in between — with no trace anywhere. Sending the version
+   * the edit was based on turns that into a 409 the client can show.
+   */
+  expectedUpdatedAt: z.string().datetime().optional(),
   title: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   status: z.enum(["todo", "in-progress", "completed", "wont-do"]).optional(),
@@ -316,6 +327,20 @@ export async function updateTask(userId: string, id: string, input: unknown) {
     },
   })
   if (!existingTask) throw notFound("Task not found")
+
+  // Deliberately NO Retry-After: this conflict is permanent, and the mobile
+  // queue reads a 409 without that header as terminal — so it goes straight to
+  // "Unsent changes" with the server's message, instead of burning six retries
+  // on something no retry can fix.
+  if (data.expectedUpdatedAt) {
+    const expected = new Date(data.expectedUpdatedAt)
+    if (
+      !isNaN(expected.getTime()) &&
+      existingTask.updatedAt.getTime() > expected.getTime()
+    ) {
+      throw new ApiError(409, "This task was changed somewhere else after you edited it")
+    }
+  }
 
   const updateData: Record<string, unknown> = {}
   if (data.title !== undefined) updateData.title = data.title

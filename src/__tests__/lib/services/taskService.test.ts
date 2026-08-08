@@ -188,3 +188,89 @@ describe("taskService.updateTask", () => {
     await expect(updateTask("u1", "t1", { title: "x" })).rejects.toMatchObject({ status: 404 })
   })
 })
+
+describe("expectedUpdatedAt — the precondition for a QUEUED edit", () => {
+  // Online, the gap between reading a task and saving it is about a second and
+  // last-wins is invisible. A PATCH queued on a plane can sit for 14 days and
+  // then silently overwrite whatever was done from the web in between.
+  const seen = new Date("2026-08-05T10:00:00.000Z")
+
+  const existing = (updatedAt: Date) => ({
+    id: "t1",
+    userId: "u1",
+    status: "todo",
+    completedAt: null,
+    updatedAt,
+    reminders: [],
+    recurrence: null,
+  })
+
+  it("409s when the row moved on after the edit was made", async () => {
+    prisma.task.findFirst.mockResolvedValue(
+      existing(new Date("2026-08-05T11:00:00.000Z")),
+    )
+
+    await expect(
+      updateTask("u1", "t1", {
+        title: "from the plane",
+        expectedUpdatedAt: seen.toISOString(),
+      }),
+    ).rejects.toMatchObject({ status: 409 })
+
+    expect(prisma.task.update).not.toHaveBeenCalled()
+  })
+
+  it("does NOT set Retry-After, because no retry can fix it", async () => {
+    // The mobile queue reads a 409 WITH Retry-After as "the idempotency claim is
+    // still pending, wait" and burns six attempts on it. Without the header it
+    // goes straight to Unsent changes with the server's message, which is the
+    // only useful outcome here.
+    prisma.task.findFirst.mockResolvedValue(
+      existing(new Date("2026-08-05T11:00:00.000Z")),
+    )
+
+    const err = await updateTask("u1", "t1", {
+      title: "x",
+      expectedUpdatedAt: seen.toISOString(),
+    }).catch((e: unknown) => e)
+
+    // The 409 is asserted too. Without it this passes against code that never
+    // throws at all — `retryAfter` is undefined on a plain result object — and
+    // would pin nothing.
+    expect((err as { status?: number }).status).toBe(409)
+    expect((err as { retryAfter?: number }).retryAfter).toBeUndefined()
+  })
+
+  it("lets the write through when nothing changed underneath", async () => {
+    prisma.task.findFirst.mockResolvedValue(existing(seen))
+    prisma.task.update.mockResolvedValue({ id: "t1", tags: [] })
+
+    await updateTask("u1", "t1", {
+      title: "fine",
+      expectedUpdatedAt: seen.toISOString(),
+    })
+    expect(prisma.task.update).toHaveBeenCalled()
+  })
+
+  it("is optional — omitting it keeps the old last-wins behaviour", async () => {
+    prisma.task.findFirst.mockResolvedValue(
+      existing(new Date("2026-08-05T11:00:00.000Z")),
+    )
+    prisma.task.update.mockResolvedValue({ id: "t1", tags: [] })
+
+    await updateTask("u1", "t1", { title: "no precondition" })
+    expect(prisma.task.update).toHaveBeenCalled()
+  })
+
+  it("never reaches the database as a column", async () => {
+    prisma.task.findFirst.mockResolvedValue(existing(seen))
+    prisma.task.update.mockResolvedValue({ id: "t1", tags: [] })
+
+    await updateTask("u1", "t1", {
+      title: "x",
+      expectedUpdatedAt: seen.toISOString(),
+    })
+    const data = prisma.task.update.mock.calls[0][0].data as Record<string, unknown>
+    expect(data.expectedUpdatedAt).toBeUndefined()
+  })
+})

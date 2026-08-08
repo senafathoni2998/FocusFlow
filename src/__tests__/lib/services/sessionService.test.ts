@@ -30,6 +30,69 @@ beforeEach(() => {
   prisma.focusSession.updateMany.mockResolvedValue({ count: 0 })
 })
 
+describe("a client-supplied startTime", () => {
+  // Without this the server stamped now unconditionally, so a flight's
+  // pomodoros all landed at the instant the wifi reconnected — putting hours of
+  // focus time on the wrong DAY in every chart, since actualMin and "Focus (7d)"
+  // are both derived from these rows.
+  const NOW = new Date("2026-08-05T12:00:00.000Z")
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(NOW)
+    prisma.focusSession.create.mockImplementation(
+      ({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: "s1", ...data }),
+    )
+  })
+  afterEach(() => jest.useRealTimers())
+
+  const startedAt = () =>
+    (prisma.focusSession.create.mock.calls[0][0].data.startTime as Date).toISOString()
+
+  it("is honoured when the session really began earlier", async () => {
+    await startSession("u1", {
+      duration: 1500,
+      startTime: "2026-08-05T09:30:00.000Z",
+    })
+    expect(startedAt()).toBe("2026-08-05T09:30:00.000Z")
+  })
+
+  it("falls back to now when omitted, exactly as before", async () => {
+    await startSession("u1", { duration: 1500 })
+    expect(startedAt()).toBe(NOW.toISOString())
+  })
+
+  it("is clamped forward to now — a session cannot start in the future", async () => {
+    // A device with a fast clock would otherwise book focus time into tomorrow.
+    //
+    // The past case is asserted in the SAME test on purpose: clamping a future
+    // value yields `now`, which is also what ignoring the field entirely yields,
+    // so the future assertion alone would pass against the old code and pin
+    // nothing. Only the pair proves the field is read at all.
+    await startSession("u1", {
+      duration: 1500,
+      startTime: "2026-08-06T12:00:00.000Z",
+    })
+    expect(startedAt()).toBe(NOW.toISOString())
+
+    prisma.focusSession.create.mockClear()
+    await startSession("u1", {
+      duration: 1500,
+      startTime: "2026-08-05T08:00:00.000Z",
+    })
+    expect(startedAt()).toBe("2026-08-05T08:00:00.000Z")
+  })
+
+  it("is clamped backward at 30 days, so history cannot be rewritten", async () => {
+    // Past the client queue's own 14-day expiry this is not a replayed session,
+    // and letting it through would rewrite stats for any day the caller picked.
+    await startSession("u1", {
+      duration: 1500,
+      startTime: "2025-01-01T00:00:00.000Z",
+    })
+    expect(startedAt()).toBe("2026-07-06T12:00:00.000Z")
+  })
+})
+
 describe("sessionService.startSession", () => {
   it("creates a running session with the default type and no task", async () => {
     prisma.focusSession.create.mockResolvedValue({ id: "s1" })
