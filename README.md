@@ -114,6 +114,68 @@ npm run test:watch    # watch mode
 npm run test:coverage # coverage report
 ```
 
+### Background reminders (optional)
+
+Task reminders already arrive two ways with no setup: an in-app banner while a
+tab is open, and a system notification on the Android app while it is running.
+Both need something to be running. This third channel delivers them **with the
+browser closed**.
+
+It is off unless you configure it, and a deployment that skips this section
+behaves exactly as it did before.
+
+**1. Generate a VAPID key pair — once.**
+
+```bash
+npm run push:keys >> .env
+```
+
+Keep the result. The public half is baked into every subscription a browser
+hands back, so regenerating invalidates all of them: existing rows start failing
+with `403`, the dispatcher deletes them, and everyone has to turn push on again.
+
+**2. Set a cron secret** in `.env`:
+
+```bash
+CRON_SECRET="$(openssl rand -hex 32)"
+```
+
+**3. Run the dispatcher on a schedule.** This is the part that needs
+infrastructure, and there is no way around it — a closed browser means nothing
+client-side is running to notice a reminder came due, so something external has
+to ask:
+
+```cron
+* * * * * curl -fsS -X POST http://localhost:3000/api/cron/reminders \
+    -H "Authorization: Bearer $CRON_SECRET" >/dev/null
+```
+
+A cron line rather than a timer inside the app, because nothing inside a Next.js
+process can be relied on to tick: `next start` gets restarted, may run as several
+instances (each firing its own duplicate), and serverless keeps no process
+between requests.
+
+The response is a summary — `{"users":1,"delivered":2,"pruned":0,"deferred":0}` —
+so you can tell whether it is working. `"skipped": true` means no VAPID keys are
+configured. With `CRON_SECRET` unset the route refuses everything rather than
+defaulting open.
+
+**4. Turn it on per browser** in Settings → Background reminders. It is a
+per-browser subscription: a laptop and a desktop are two independent ones.
+
+Notes worth knowing before you enable it:
+
+- **A reminder still fires exactly once, across all three channels.** They race
+  for the same `dispatchedAt` claim, and push usually wins because its cron runs
+  every minute — so when push is on, the in-app banner mostly stops appearing.
+  Same reminder, delivered somewhere you will actually see it.
+- **Nothing is claimed unless a push was accepted for it.** No subscriptions, no
+  keys, or a push service that is down all leave the reminder undispatched for
+  the tab or the phone to deliver instead.
+- **Browsers refuse service workers outside a secure context**, so this needs
+  `https` (or `localhost`). The Settings card says so rather than failing
+  opaquely.
+
 ## Usage
 
 ### 1. Sign Up & Sign In

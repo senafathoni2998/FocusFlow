@@ -7,8 +7,13 @@ import { getDueReminders, markRemindersDispatched } from "@/app/actions/reminder
  * Delivers reminders while the app is open in a browser tab (the no-infra
  * channel): it polls the "due" query, shows a browser Web Notification (if the
  * user granted permission) plus an in-app banner, then marks them dispatched so
- * each fires exactly once. Real background delivery (fires when the app is
- * closed) would need a service worker + Web Push — a future upgrade.
+ * each fires exactly once.
+ *
+ * STILL THE DEFAULT PATH. Background Web Push now exists (Settings → Background
+ * reminders), but it needs VAPID keys and a cron line, and a deployment without
+ * either behaves exactly as it always has. When push IS configured its cron
+ * usually claims a reminder first, so it arrives as a system notification and no
+ * banner appears here — the same reminder, delivered somewhere better.
  *
  * Known limitation: with the app open in multiple tabs, a reminder can be
  * delivered in more than one of them (each tab polls independently). Fine for a
