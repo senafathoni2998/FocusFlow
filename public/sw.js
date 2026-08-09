@@ -33,9 +33,12 @@ self.addEventListener("push", (event) => {
 
   const title = data.title || "Task"
   const taskId = data.taskId || null
+  // A test push is not a reminder, and heading it "FocusFlow reminder" would
+  // teach the user to expect a task that is not there.
+  const heading = data.type === "test" ? "FocusFlow" : "FocusFlow reminder"
 
   event.waitUntil(
-    self.registration.showNotification("FocusFlow reminder", {
+    self.registration.showNotification(heading, {
       body: title,
       // No `icon` or `badge`: the app ships no icon asset, and naming one that
       // does not exist buys a 404 per notification in exchange for nothing. The

@@ -8,7 +8,11 @@
  * in-app dispatcher and the Android poller, so claiming something that was never
  * delivered does not degrade the feature, it deletes the reminder.
  */
-import { dispatchDuePushes } from "@/lib/services/pushService"
+import {
+  dispatchDuePushes,
+  sendTestPush,
+  describeSubscription,
+} from "@/lib/services/pushService"
 
 jest.mock("@/lib/webPush", () => ({
   isPushConfigured: jest.fn(() => true),
@@ -177,5 +181,97 @@ describe("dispatchDuePushes — the due query", () => {
       taskId: "t1",
       title: "Ship it",
     })
+  })
+})
+
+describe("sendTestPush — proving the plumbing works", () => {
+  it("sends to every signed-up browser and reports how many got it", async () => {
+    // The whole reason this exists: push fails SILENTLY. Without a button, the
+    // only way to learn that a step was missed is to set a reminder and wait.
+    prisma.pushSubscription.findMany.mockResolvedValue([
+      SUB,
+      { ...SUB, id: "s2", endpoint: "https://push.example/bbb" },
+    ])
+
+    const res = await sendTestPush("u1")
+
+    expect(res.sent).toBe(2)
+    expect(res.failures).toEqual([])
+    const [, payload] = mockSend.mock.calls[0]
+    expect(payload).toMatchObject({ type: "test" })
+  })
+
+  it("never touches a reminder", async () => {
+    // It reports; dispatchedAt is not its business. Claiming one here would
+    // silently consume a real reminder to answer "does push work".
+    await sendTestPush("u1")
+
+    expect(prisma.reminder.findMany).not.toHaveBeenCalled()
+    expect(prisma.reminder.updateMany).not.toHaveBeenCalled()
+  })
+
+  it("names the browser that failed, because '1 of 3 failed' is useless", async () => {
+    prisma.pushSubscription.findMany.mockResolvedValue([
+      { ...SUB, userAgent: "Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0" },
+    ])
+    mockSend.mockResolvedValue({ status: "failed", code: 500, message: "boom" })
+
+    const res = await sendTestPush("u1")
+
+    expect(res.sent).toBe(0)
+    expect(res.failures).toEqual(["Firefox on Linux: boom"])
+  })
+
+  it("prunes a dead browser it finds along the way", async () => {
+    mockSend.mockResolvedValue({ status: "gone", code: 410 })
+    prisma.pushSubscription.deleteMany.mockResolvedValue({ count: 1 })
+
+    const res = await sendTestPush("u1")
+
+    expect(res.pruned).toBe(1)
+    expect(res.sent).toBe(0)
+  })
+
+  it("says so plainly when there is nothing to send to", async () => {
+    prisma.pushSubscription.findMany.mockResolvedValue([])
+
+    const res = await sendTestPush("u1")
+
+    expect(mockSend).not.toHaveBeenCalled()
+    expect(res.failures[0]).toMatch(/No browsers/)
+  })
+
+  it("says so when the server has no keys, rather than failing opaquely", async () => {
+    mockConfigured.mockReturnValue(false)
+
+    const res = await sendTestPush("u1")
+
+    expect(res.failures[0]).toMatch(/not configured/)
+    expect(prisma.pushSubscription.findMany).not.toHaveBeenCalled()
+  })
+})
+
+describe("describeSubscription", () => {
+  it("tells two of the user's own machines apart", () => {
+    expect(describeSubscription("Mozilla/5.0 (Windows NT 10.0) Chrome/120 Safari/537")).toBe(
+      "Chrome on Windows",
+    )
+    expect(describeSubscription("Mozilla/5.0 (Macintosh; Mac OS X) Firefox/130.0")).toBe(
+      "Firefox on macOS",
+    )
+    // Chrome's UA contains "Safari", so Safari has to be checked last or every
+    // Chrome install would be labelled Safari.
+    expect(describeSubscription("Mozilla/5.0 (Macintosh; Mac OS X) Version/17 Safari/605")).toBe(
+      "Safari on macOS",
+    )
+    // Edge and Opera also contain "Chrome"; they are checked before it.
+    expect(describeSubscription("Mozilla/5.0 (Windows NT 10.0) Chrome/120 Edg/120")).toBe(
+      "Edge on Windows",
+    )
+  })
+
+  it("falls back to something rather than nothing", () => {
+    expect(describeSubscription(null)).toBe("Unknown browser")
+    expect(describeSubscription("some-custom-agent")).toBe("some-custom-agent")
   })
 })

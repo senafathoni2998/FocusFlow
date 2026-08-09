@@ -160,8 +160,14 @@ so you can tell whether it is working. `"skipped": true` means no VAPID keys are
 configured. With `CRON_SECRET` unset the route refuses everything rather than
 defaulting open.
 
-**4. Turn it on per browser** in Settings → Background reminders. It is a
-per-browser subscription: a laptop and a desktop are two independent ones.
+**4. Turn it on per browser** in Settings → Background reminders, then hit
+**Send a test notification** — push fails silently, so this is the difference
+between knowing it works and finding out days later that step 3 was missed.
+
+The same card lists every browser signed up, each removable. That list is the
+only way to revoke a machine you are not sitting at: unsubscribing goes through
+the browser's own PushManager, which can only ever reach the browser doing the
+asking.
 
 Notes worth knowing before you enable it:
 

@@ -77,13 +77,107 @@ export async function deleteSubscription(userId: string, input: unknown) {
 }
 
 export async function listSubscriptions(userId: string) {
-  return prisma.pushSubscription.findMany({
+  const rows = await prisma.pushSubscription.findMany({
     where: { userId },
     // The key material is deliberately NOT selected. Nothing in the UI needs it
     // and an endpoint plus keys is everything required to push to that browser.
     select: { id: true, endpoint: true, userAgent: true, createdAt: true, lastSuccessAt: true },
     orderBy: { createdAt: "desc" },
   })
+  // The label is computed HERE rather than in the component, so the client never
+  // receives the raw user-agent string it has no other use for.
+  return rows.map((r) => ({ ...r, label: describeSubscription(r.userAgent) }))
+}
+
+export interface TestPushResult {
+  /** Subscriptions a push was accepted for. */
+  sent: number
+  /** Subscriptions the push service said were dead; they have been deleted. */
+  pruned: number
+  /** Per-browser messages for the ones that failed transiently. */
+  failures: string[]
+}
+
+/**
+ * Push a "this works" notification to every browser this user has signed up,
+ * right now.
+ *
+ * WHY THIS EXISTS AS A FEATURE RATHER THAN A DEBUG SCRIPT. The failure mode of
+ * background push is SILENCE. It needs a secure context, a registered service
+ * worker, VAPID keys that match the subscription, a reachable push service and
+ * a cron line that is actually running — and if any one of those is wrong,
+ * nothing happens and nothing says so. The only alternative to a button is
+ * setting a reminder and waiting to see whether it arrives, which is a terrible
+ * way to find out that step three was missed.
+ *
+ * Deliberately touches NO reminder. It sends and reports; `dispatchedAt` is not
+ * its business.
+ */
+export async function sendTestPush(userId: string): Promise<TestPushResult> {
+  const result: TestPushResult = { sent: 0, pruned: 0, failures: [] }
+  if (!isPushConfigured()) {
+    result.failures.push("Push is not configured on the server.")
+    return result
+  }
+
+  const subs = await prisma.pushSubscription.findMany({ where: { userId } })
+  if (subs.length === 0) {
+    result.failures.push("No browsers are signed up for background reminders.")
+    return result
+  }
+
+  const dead: string[] = []
+  for (const s of subs) {
+    const outcome = await sendPush(
+      { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth },
+      { type: "test", title: "Background reminders are working." },
+    )
+    if (outcome.status === "sent") result.sent++
+    else if (outcome.status === "gone") dead.push(s.endpoint)
+    // Named by browser, because "1 of 3 failed" is useless without knowing which.
+    else result.failures.push(`${describeSubscription(s.userAgent)}: ${outcome.message}`)
+  }
+
+  if (dead.length > 0) {
+    const res = await prisma.pushSubscription.deleteMany({
+      where: { endpoint: { in: dead } },
+    })
+    result.pruned = res.count
+  }
+  return result
+}
+
+/**
+ * A user-agent string reduced to something a person can tell two rows apart by.
+ *
+ * Deliberately crude. Proper UA parsing is a losing game and this only has to
+ * answer "which of my machines is this?" — anything it cannot read falls back to
+ * the raw string, which is still more useful than "Unknown browser".
+ */
+export function describeSubscription(userAgent: string | null | undefined): string {
+  if (!userAgent) return "Unknown browser"
+  const browser =
+    /Edg\//.test(userAgent) ? "Edge"
+    : /OPR\//.test(userAgent) ? "Opera"
+    : /Firefox\//.test(userAgent) ? "Firefox"
+    // Chrome's UA contains "Safari", so Safari must be checked LAST and only
+    // when neither Chrome nor the Chromium forks above matched.
+    : /Chrome\//.test(userAgent) ? "Chrome"
+    : /Safari\//.test(userAgent) ? "Safari"
+    : null
+
+  const os =
+    /Android/.test(userAgent) ? "Android"
+    : /iPhone|iPad/.test(userAgent) ? "iOS"
+    : /Windows/.test(userAgent) ? "Windows"
+    : /Mac OS X/.test(userAgent) ? "macOS"
+    : /Linux/.test(userAgent) ? "Linux"
+    : null
+
+  if (browser && os) return `${browser} on ${os}`
+  if (browser) return browser
+  if (os) return os
+  return userAgent.slice(0, 60)
 }
 
 export interface DispatchSummary {

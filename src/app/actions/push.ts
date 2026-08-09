@@ -6,6 +6,7 @@ import {
   saveSubscription,
   deleteSubscription,
   listSubscriptions,
+  sendTestPush,
 } from "@/lib/services/pushService"
 import { pushConfig } from "@/lib/webPush"
 
@@ -61,7 +62,14 @@ export async function removePushSubscription(endpoint: string) {
   }
 }
 
-/** The browsers currently signed up, for the Settings list. */
+/**
+ * The browsers currently signed up, for the Settings list.
+ *
+ * The list is the ONLY way to turn push off on a machine you are not sitting at:
+ * unsubscribing works through the browser's own PushManager, which can obviously
+ * only reach the browser doing the asking. Without this, an old laptop keeps
+ * receiving your reminders forever.
+ */
 export async function getPushSubscriptions() {
   const session = await auth()
   const userId = session?.user?.id
@@ -70,5 +78,22 @@ export async function getPushSubscriptions() {
     return await listSubscriptions(userId)
   } catch {
     return []
+  }
+}
+
+/** Push a "this works" notification to every browser signed up, right now. */
+export async function sendTestPushNotification() {
+  const session = await auth()
+  const userId = session?.user?.id
+  if (!userId) return { sent: 0, pruned: 0, failures: ["Unauthorized"] }
+
+  try {
+    return await sendTestPush(userId)
+  } catch (e) {
+    return {
+      sent: 0,
+      pruned: 0,
+      failures: [e instanceof Error ? e.message : "Could not send a test notification"],
+    }
   }
 }
