@@ -30,6 +30,28 @@ const checkInSchema = z.object({
   delta: z.number().int().min(-1000).max(1000).optional(),
 })
 
+/**
+ * Bump a habit's own `updatedAt` because one of its check-ins changed.
+ *
+ * A check-in writes `HabitCheckIn`, never `Habit`. Delta sync selects on
+ * `Habit.updatedAt`, so without this a habit whose streak just changed does not
+ * appear in `GET /api/v1/sync` at all — check in on the phone and the laptop
+ * never hears about it, and vice versa, until somebody pulls to refresh. The
+ * limitation was documented in two places and worked around in neither; it got
+ * worse the day the mobile queue started sending check-ins from offline.
+ *
+ * Returned as an unawaited Prisma promise so callers can put it in the same
+ * `$transaction` as the check-in write. The two must not be able to diverge: a
+ * check-in that lands without the touch is invisible to every other device, and
+ * a touch without a check-in makes clients re-fetch a habit that did not change.
+ *
+ * `updatedAt` is set EXPLICITLY rather than relying on the `@updatedAt`
+ * attribute, because Prisma will not issue an UPDATE for an empty `data`.
+ */
+export function touchHabitOnCheckIn(habitId: string, now: Date = new Date()) {
+  return prisma.habit.update({ where: { id: habitId }, data: { updatedAt: now } })
+}
+
 /** Parse a yyyy-mm-dd (client local day) to a UTC-midnight Date for @db.Date. */
 function toCheckInDate(dateStr?: string): Date {
   const now = new Date()
@@ -62,9 +84,9 @@ export async function getHabits(userId: string) {
  * silently substitutes HabitStats.empty() when `stats` is absent, so merging one
  * blanked a habit's streak and monthly rate to zero until the next full GET.
  *
- * NOTE the limitation this does NOT fix: a check-in does not bump the habit's
- * own `updatedAt`, so a habit whose stats changed will not appear in a delta at
- * all. Correct when returned; not guaranteed to be returned.
+ * The limitation this used to carry is now fixed at the source: a check-in
+ * touches the habit's own `updatedAt` (see touchHabitOnCheckIn), so a habit
+ * whose stats changed DOES appear in a delta.
  */
 export async function withHabitStats<T extends { id: string }>(habits: T[]) {
   const totals = await satisfiedDayCounts(habits as never)
@@ -162,15 +184,18 @@ export async function checkInHabit(userId: string, habitId: string, input: unkno
   })
   const newAmount = Math.max(0, (existing?.amount ?? 0) + delta)
 
-  if (newAmount <= 0) {
-    if (existing) await prisma.habitCheckIn.delete({ where: { id: existing.id } })
-  } else {
-    await prisma.habitCheckIn.upsert({
-      where: { habitId_date: { habitId, date } },
-      update: { amount: newAmount },
-      create: { habitId, date, amount: newAmount },
-    })
-  }
+  // One transaction, so the check-in and the habit's own `updatedAt` cannot
+  // diverge — see touchHabitOnCheckIn.
+  await prisma.$transaction([
+    newAmount <= 0
+      ? prisma.habitCheckIn.deleteMany({ where: { habitId, date } })
+      : prisma.habitCheckIn.upsert({
+          where: { habitId_date: { habitId, date } },
+          update: { amount: newAmount },
+          create: { habitId, date, amount: newAmount },
+        }),
+    touchHabitOnCheckIn(habitId),
+  ])
 
   const updated = await prisma.habit.findFirst({
     where: { id: habitId, userId },
