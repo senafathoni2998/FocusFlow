@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { getAISettings } from "@/app/actions/settings"
 import AISettingsForm from "@/components/settings/AISettingsForm"
 import DataExportCard from "@/components/settings/DataExportCard"
+import DeleteAccountCard from "@/components/settings/DeleteAccountCard"
 import PushNotificationsCard from "@/components/settings/PushNotificationsCard"
 
 export default async function SettingsPage() {
@@ -24,6 +25,7 @@ export default async function SettingsPage() {
         <AISettingsForm settings={settings} />
         <PushNotificationsCard />
         <DataExportCard />
+        <DeleteAccountCard email={session.user.email} />
       </div>
     </main>
   )
