@@ -146,7 +146,7 @@ client-side is running to notice a reminder came due, so something external has
 to ask:
 
 ```cron
-* * * * * curl -fsS -X POST http://localhost:3000/api/cron/reminders \
+* * * * * curl -fsS --max-time 50 -X POST http://localhost:3000/api/cron/reminders \
     -H "Authorization: Bearer $CRON_SECRET" >/dev/null
 ```
 

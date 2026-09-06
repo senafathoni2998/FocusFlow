@@ -149,7 +149,13 @@ export default function PushNotificationsCard() {
   // Not configured on the server — see the note at the top.
   if (!vapidKey) return null
 
-  const enabledHere = thisEndpoint !== null
+  // "On" means the browser holds a subscription AND the server has a row for
+  // it. The local half alone is not enough: removing this browser from another
+  // machine deletes the row but cannot reach the PushManager here, so the
+  // subscription lingers and the toggle would read "on" while nothing can ever
+  // be delivered. With the row gone, "Turn on" re-saves the same subscription.
+  const enabledHere =
+    thisEndpoint !== null && rows.some((r) => r.endpoint === thisEndpoint)
 
   return (
     <Card className="mt-6 p-6">
@@ -227,7 +233,9 @@ export default function PushNotificationsCard() {
         </div>
       )}
 
-      {notice && !error && <p className="mt-3 text-sm text-green-700">{notice}</p>}
+      {/* Both, not either: "sent to 1, and the other failed because…" is the
+          exact answer a user with two browsers is asking for. */}
+      {notice && <p className="mt-3 text-sm text-green-700">{notice}</p>}
       {error && (
         <p role="alert" className="mt-3 text-sm text-red-600">
           {error}

@@ -92,7 +92,15 @@ export async function sendPush(
       // in reminderWindow.ts already says so. Telling the push service the same
       // thing stops it holding a message for an offline device past the point
       // where delivering it helps.
-      { TTL: 60 * 60 },
+      {
+        TTL: 60 * 60,
+        // A push service that accepts the socket and never answers would
+        // otherwise hang this send — and the cron run around it — forever,
+        // with the next minute's run piling up behind it. web-push destroys
+        // the socket on this and rejects, which lands in the `failed` branch
+        // below: transient, row kept, reminder deferred to the next run.
+        timeout: 10_000,
+      },
     )
     return { status: "sent" }
   } catch (e) {

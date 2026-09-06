@@ -59,8 +59,12 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close()
-  const taskId = event.notification.data && event.notification.data.taskId
-  const url = taskId ? `/tasks?task=${encodeURIComponent(taskId)}` : "/tasks"
+  // Lands on the task list, not on the task. The workspace opens a task for
+  // editing from per-view local state and reads no id from the URL, so a
+  // `?task=` here would be a parameter nothing consumes — a deep link that
+  // looks like it works. `taskId` stays in the notification's data so a real
+  // one can be wired later without touching this worker.
+  const url = "/tasks"
 
   event.waitUntil(
     // Focus an existing tab rather than opening a new one every time. Someone

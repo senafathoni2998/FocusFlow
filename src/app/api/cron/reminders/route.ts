@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic"
  * serverless deployment no process outlives a request at all. One external
  * scheduler works in all three, and is trivially testable with curl.
  *
- *   * * * * * curl -fsS -X POST http://localhost:3000/api/cron/reminders \
+ *   * * * * * curl -fsS --max-time 50 -X POST http://localhost:3000/api/cron/reminders \
  *       -H "Authorization: Bearer $CRON_SECRET" >/dev/null
  *
  * AUTH IS A SHARED SECRET, not a user session — there is no user in a cron run.
