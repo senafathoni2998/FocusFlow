@@ -1,0 +1,6 @@
+# TLS from Let's Encrypt, automatically, for the DOMAIN in .env.prod. Caddy
+# answers the ACME challenge itself, so ports 80 and 443 both have to reach it.
+{$DOMAIN} {
+    encode gzip
+    reverse_proxy app:3000
+}

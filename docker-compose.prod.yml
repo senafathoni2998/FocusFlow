@@ -1,66 +1,118 @@
-version: '3.8'
+# A PUBLIC FocusFlow: TLS at the edge, nothing else reachable from outside.
+#
+#   cp .env.prod.example .env.prod   # fill in DOMAIN and the secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Only Caddy publishes ports. The app is reached through it, and Postgres is
+# reachable only from the other containers — the previous file published 5432
+# to the host, which on a VPS is a database on the open internet behind a
+# default password. `docker compose exec postgres psql -U focusflow` still works.
+#
+# The full walk-through, including the reviewer account, is docs/DEPLOY.md.
 
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
     container_name: focusflow-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-focusflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
       POSTGRES_DB: ${POSTGRES_DB:-focusflow}
     volumes:
-      # Mount to host directory for easy backup
       - ${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-focusflow}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # FocusFlow App (pulled from Docker Hub)
   migrate:
-    image: ${DOCKERHUB_USERNAME:-your-username}/focusflow-migrate:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME:?set DOCKERHUB_USERNAME in .env.prod}/focusflow-migrate:${IMAGE_TAG:-latest}
     container_name: focusflow-migrate
     restart: "no"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-focusflow}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-focusflow}
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c "
-        npx prisma migrate deploy
-      "
+    command: ["npx", "prisma", "migrate", "deploy"]
 
   app:
-    image: ${DOCKERHUB_USERNAME:-your-username}/focusflow:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME}/focusflow:${IMAGE_TAG:-latest}
     container_name: focusflow-app
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-3000}:3000"
+    # No `ports:` — Caddy is the only way in.
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-focusflow}
-      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-focusflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-focusflow}
+      # https, always, because that is the only address this file serves.
+      NEXTAUTH_URL: https://${DOMAIN:?set DOMAIN in .env.prod}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env.prod}
       AUTH_TRUST_HOST: "true"
-      GROQ_API_KEY: ${GROQ_API_KEY}
+      # Closed on a public instance unless you say otherwise — see docs/DEPLOY.md
+      # for the create-the-reviewer-account-then-close dance.
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-false}
+      AI_PROVIDER: ${AI_PROVIDER:-groq}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # Background web push (optional; see README). Empty = feature off.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      CRON_SECRET: ${CRON_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: >
-      sh -c "
-        node server.js
-      "
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
-# Optional: Named volume for data (alternative to bind mount)
-# Uncomment below to use Docker volume instead of host directory
-# volumes:
-#   postgres_data:
+  caddy:
+    image: caddy:2-alpine
+    container_name: focusflow-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # Fires the push dispatcher once a minute. Only meaningful with VAPID keys
+  # set, so it is behind a profile:  docker compose --profile push up -d
+  reminders-cron:
+    image: curlimages/curl:8.10.1
+    container_name: focusflow-reminders-cron
+    restart: unless-stopped
+    profiles: ["push"]
+    environment:
+      CRON_SECRET: ${CRON_SECRET:?CRON_SECRET is required for the push profile}
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          curl -fsS --max-time 50 -X POST http://app:3000/api/cron/reminders \
+            -H "Authorization: Bearer $$CRON_SECRET" >/dev/null || echo "reminders: $$(date) request failed"
+          sleep 60
+        done
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:

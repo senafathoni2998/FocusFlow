@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { findUserByEmail, normalizeEmail } from "@/lib/email"
 import { clientKey, rateLimit, REGISTER_LIMIT } from "@/lib/rateLimit"
 import { z } from "zod"
+import { isSignupOpen, SIGNUP_CLOSED_MESSAGE } from "@/lib/signupPolicy"
 
 const signupSchema = z.object({
   email: z.string().trim().email(),
@@ -13,6 +14,11 @@ const signupSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    // Before the rate limit, not after: a closed door should not spend the
+    // caller's attempts, and the answer does not depend on who is asking.
+    if (!isSignupOpen()) {
+      return NextResponse.json({ error: SIGNUP_CLOSED_MESSAGE }, { status: 403 })
+    }
     // Same cap as the mobile register endpoint — both create accounts and neither
     // requires a session, so throttling one and not the other protects nothing.
     const limited = rateLimit(`register:ip:${clientKey(request)}`, REGISTER_LIMIT)
