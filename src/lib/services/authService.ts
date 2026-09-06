@@ -1,7 +1,8 @@
 import { hash, compare } from "bcryptjs"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { ApiError, badRequest, unauthorized } from "@/lib/apiResponse"
+import { rateLimit, clearRateLimit, LOGIN_LIMIT } from "@/lib/rateLimit"
+import { ApiError, badRequest, unauthorized, tooManyRequests } from "@/lib/apiResponse"
 import { issueTokens, verifyRefreshToken } from "@/lib/apiAuth"
 import { findUserByEmail, normalizeEmail } from "@/lib/email"
 
@@ -94,4 +95,40 @@ export async function getMe(userId: string) {
   })
   if (!user) throw unauthorized()
   return { user }
+}
+
+const deleteSchema = z.object({ password: z.string().min(1) })
+
+/**
+ * Delete the account and everything it owns, in one statement.
+ *
+ * Every user-owned table cascades on `User` (schema.prisma), so `user.delete`
+ * takes tasks, habits and their check-ins, goals, sessions, reminders, tags,
+ * saved views, push subscriptions, idempotency keys and tombstones with it. No
+ * second query, no partial state to recover from.
+ *
+ * The PASSWORD IS REQUIRED AGAIN. A bearer token alone — on a phone left
+ * unlocked, or a session cookie on a shared machine — must not be enough to
+ * erase an account. Password attempts are throttled per account with the same
+ * budget as login, since this is a login-strength check on a known account.
+ *
+ * Google Play requires this of any app that lets users create an account, and
+ * asks for the in-app path and a public URL: docs/DELETE_ACCOUNT.md in the
+ * mobile repo.
+ */
+export async function deleteAccount(userId: string, input: unknown) {
+  const { password } = deleteSchema.parse(input)
+
+  const limited = rateLimit(`delete:user:${userId}`, LOGIN_LIMIT)
+  if (!limited.allowed) throw tooManyRequests(limited.retryAfter)
+
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) throw unauthorized()
+
+  const match = await compare(password, user.password)
+  if (!match) throw unauthorized("Invalid password")
+
+  await prisma.user.delete({ where: { id: userId } })
+  clearRateLimit(`delete:user:${userId}`)
+  return { success: true }
 }
