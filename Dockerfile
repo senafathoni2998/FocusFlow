@@ -63,10 +63,18 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static/ ./.next/static/
 
 # Set the correct permission for prerender cache
-RUN mkdir -p .next/cache/images public && chown -R nextjs:nodejs .next/cache public
+# `output: standalone` does NOT include public/ — Next.js documents copying it by
+# hand, next to .next/static. This used to be an empty mkdir, which was harmless
+# while public/ was empty and silently broke background push the day sw.js
+# moved in: a service worker that 404s registers nothing, and nothing says so.
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+RUN mkdir -p .next/cache/images && chown -R nextjs:nodejs .next/cache
 
 USER nextjs
 
+# What compose and any orchestrator poll. busybox wget is in the alpine base.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1
 EXPOSE 3000
 
 ENV PORT=3000

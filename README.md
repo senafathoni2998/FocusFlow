@@ -114,6 +114,15 @@ npm run test:watch    # watch mode
 npm run test:coverage # coverage report
 ```
 
+### Deploying a public instance
+
+A VPS, a domain, and `docker compose -f docker-compose.prod.yml up -d`: Caddy
+terminates TLS with an automatic Let's Encrypt certificate, Postgres stays
+unreachable from outside, and sign-up starts **closed** (`ALLOW_SIGNUP=false`)
+so a public server does not accept strangers. Step by step — including how to
+create the one account Google Play's reviewers need — in
+[`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 ### Background reminders (optional)
 
 Task reminders already arrive two ways with no setup: an in-app banner while a
