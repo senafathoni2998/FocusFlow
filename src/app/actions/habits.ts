@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { auth } from "@/lib/auth"
 import { z } from "zod"
 import { satisfiedDayCounts } from "@/lib/habitTotals"
+import { touchHabitOnCheckIn } from "@/lib/services/habitService"
 
 /**
  * Habit CRUD + daily check-ins. Follows the app convention:
@@ -223,15 +224,21 @@ export async function checkInHabit(data: { habitId: string; date?: string; delta
     })
     const newAmount = Math.max(0, (existing?.amount ?? 0) + delta)
 
-    if (newAmount <= 0) {
-      if (existing) await prisma.habitCheckIn.delete({ where: { id: existing.id } })
-    } else {
-      await prisma.habitCheckIn.upsert({
-        where: { habitId_date: { habitId: v.habitId, date } },
-        update: { amount: newAmount },
-        create: { habitId: v.habitId, date, amount: newAmount },
-      })
-    }
+    // The check-in write and the habit touch go together or not at all — see
+    // touchHabitOnCheckIn for why the touch exists.
+    await prisma.$transaction([
+      newAmount <= 0
+        ? // deleteMany, not delete: it takes a filter rather than the compound
+          // unique key, and it is a no-op when there is nothing there — so the
+          // "clear an empty day" case does not throw.
+          prisma.habitCheckIn.deleteMany({ where: { habitId: v.habitId, date } })
+        : prisma.habitCheckIn.upsert({
+            where: { habitId_date: { habitId: v.habitId, date } },
+            update: { amount: newAmount },
+            create: { habitId: v.habitId, date, amount: newAmount },
+          }),
+      touchHabitOnCheckIn(v.habitId),
+    ])
 
     revalidatePath("/habits")
     revalidatePath("/dashboard")

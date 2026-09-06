@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { getAISettings } from "@/app/actions/settings"
 import AISettingsForm from "@/components/settings/AISettingsForm"
 import DataExportCard from "@/components/settings/DataExportCard"
+import PushNotificationsCard from "@/components/settings/PushNotificationsCard"
 
 export default async function SettingsPage() {
   const session = await auth()
@@ -21,6 +22,7 @@ export default async function SettingsPage() {
           Choose which AI provider powers your assistant and insights.
         </p>
         <AISettingsForm settings={settings} />
+        <PushNotificationsCard />
         <DataExportCard />
       </div>
     </main>

@@ -16,8 +16,12 @@ jest.mock("@/lib/prisma", () => ({
       findUnique: jest.fn(),
       upsert: jest.fn(),
       delete: jest.fn(),
+      deleteMany: jest.fn(),
       groupBy: jest.fn(),
     },
+    // A check-in writes the check-in AND touches the habit's own updatedAt in
+    // one transaction, so delta sync can see that the habit changed.
+    $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
   },
 }))
 
@@ -151,7 +155,12 @@ describe("Habit Actions", () => {
       ;(mockPrisma.habit.findFirst as jest.Mock).mockResolvedValue({ id: "h1", userId: "u1", goalType: "achieve" })
       ;(mockPrisma.habitCheckIn.findUnique as jest.Mock).mockResolvedValue({ id: "c1", amount: 1 })
       await checkInHabit({ habitId: "h1", delta: -1 })
-      expect(mockPrisma.habitCheckIn.delete).toHaveBeenCalledWith({ where: { id: "c1" } })
+      // deleteMany keyed by (habitId, date), not delete-by-id: it takes a filter
+      // so it composes into the $transaction that also touches the habit's
+      // updatedAt, and it is a no-op rather than a throw if the row has gone.
+      expect(mockPrisma.habitCheckIn.deleteMany).toHaveBeenCalledWith({
+        where: { habitId: "h1", date: expect.any(Date) },
+      })
       expect(mockPrisma.habitCheckIn.upsert).not.toHaveBeenCalled()
     })
 

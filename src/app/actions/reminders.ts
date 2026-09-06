@@ -8,8 +8,14 @@ import { dueReminderWhere, DUE_REMINDER_TAKE } from "@/lib/reminderWindow"
  * Reminder dispatch queries. The in-app ReminderDispatcher (a client component
  * mounted in the layout) polls getDueReminders while the app is open, shows a
  * Web Notification + banner, then calls markRemindersDispatched so each fires
- * once. Background delivery when the app is closed would need a service worker +
- * Web Push (a future upgrade); the persisted triggerAt/dispatchedAt already support it.
+ * once.
+ *
+ * THREE CHANNELS NOW RACE FOR THAT CLAIM: this one, the Android poller, and
+ * background Web Push (lib/services/pushService.ts). Whichever marks a reminder
+ * dispatched first is the one that notifies, which is what keeps "exactly once"
+ * true across all of them. Push runs on a cron and so usually wins when it is
+ * configured — the reminder arrives as a system notification rather than an
+ * in-app banner, which is the point of it.
  */
 
 /** Fired-and-undispatched reminders for the session user, soonest first. */

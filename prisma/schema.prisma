@@ -28,6 +28,39 @@ model User {
   savedFilters SavedFilter[]
   tombstones Tombstone[]
   idempotencyKeys IdempotencyKey[]
+  pushSubscriptions PushSubscription[]
+}
+
+/// One browser that has agreed to receive reminders while it is closed.
+///
+/// Per BROWSER, not per user: the same account on a laptop and a desktop is two
+/// rows, and both should ring. `endpoint` is the push service's URL for that
+/// browser and is globally unique, which is what makes re-subscribing an upsert
+/// rather than a duplicate — browsers hand back the same endpoint until the user
+/// clears site data.
+///
+/// The keys are the browser's own public key material for payload encryption.
+/// They are useless without the VAPID private key held in the environment, but
+/// they are still per-user data and go when the user does (onDelete: Cascade).
+model PushSubscription {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint String @unique
+  p256dh   String
+  auth     String
+
+  /// Only ever shown back to the user, so they can tell two browsers apart when
+  /// revoking one. Never parsed.
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  /// Set when a send last succeeded. A subscription that has never worked is the
+  /// first thing to look at when someone says push is not arriving.
+  lastSuccessAt DateTime?
+
+  @@index([userId])
 }
 
 model Habit {

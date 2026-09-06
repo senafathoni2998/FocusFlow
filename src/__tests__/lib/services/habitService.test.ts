@@ -49,10 +49,16 @@ beforeEach(() => {
     delete: jest.fn().mockResolvedValue({}),
     aggregate: jest.fn().mockResolvedValue({ _max: { order: 20 } }),
   }
+  // A check-in now writes the check-in AND touches the habit's own updatedAt in
+  // ONE transaction, so the two cannot diverge — without the touch, delta sync
+  // never carries a habit whose streak just changed. The array is built eagerly,
+  // so the model mocks below are still called exactly as before.
+  prisma.$transaction = jest.fn((ops) => Promise.all(ops))
   prisma.habitCheckIn = {
     findUnique: jest.fn(),
     upsert: jest.fn().mockResolvedValue({}),
     delete: jest.fn().mockResolvedValue({}),
+    deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     // satisfiedDayCounts: the exact lifetime total, counted rather than derived
     // from the capped check-in slice.
     groupBy: jest.fn().mockResolvedValue([]),
@@ -333,7 +339,14 @@ describe("habitService.checkInHabit", () => {
 
     await checkInHabit("u1", "h1", { delta: -1 })
 
-    expect(prisma.habitCheckIn.delete).toHaveBeenCalledWith({ where: { id: "c1" } })
+    // deleteMany keyed by (habitId, date) rather than delete-by-id: it takes a
+    // filter, so it composes into the $transaction, and it is a no-op instead of
+    // a throw when the row has already gone.
+    // The day is left as any Date: this path uses "today", which floats, and
+    // the UTC-midnight keying is pinned by its own test below.
+    expect(prisma.habitCheckIn.deleteMany).toHaveBeenCalledWith({
+      where: { habitId: "h1", date: expect.any(Date) },
+    })
     expect(prisma.habitCheckIn.upsert).not.toHaveBeenCalled()
   })
 
@@ -345,8 +358,45 @@ describe("habitService.checkInHabit", () => {
 
     await checkInHabit("u1", "h1", { delta: -50 })
 
-    expect(prisma.habitCheckIn.delete).toHaveBeenCalledWith({ where: { id: "c1" } })
+    expect(prisma.habitCheckIn.deleteMany).toHaveBeenCalled()
     expect(prisma.habitCheckIn.upsert).not.toHaveBeenCalled()
+  })
+
+  it("touches the habit's own updatedAt, or no other device ever learns", async () => {
+    // THE POINT OF THE TRANSACTION. A check-in writes HabitCheckIn and nothing
+    // else, but delta sync selects on Habit.updatedAt — so without this a habit
+    // whose streak just changed does not appear in GET /api/v1/sync at all.
+    // Check in on the phone and the laptop never hears about it until somebody
+    // pulls to refresh. It got worse the day the mobile queue started sending
+    // check-ins from offline.
+    prisma.habit.findFirst
+      .mockResolvedValueOnce(habitRow)
+      .mockResolvedValueOnce({ ...habitRow, checkIns: [] })
+    prisma.habitCheckIn.findUnique.mockResolvedValue(null)
+
+    await checkInHabit("u1", "h1", { delta: 1 })
+
+    expect(prisma.habit.update).toHaveBeenCalledWith({
+      where: { id: "h1" },
+      data: { updatedAt: expect.any(Date) },
+    })
+    // In the SAME transaction as the check-in write, so the two cannot diverge.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1)
+    expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2)
+  })
+
+  it("touches it on an UNDO too, since removing a check-in also changes the streak", async () => {
+    prisma.habit.findFirst
+      .mockResolvedValueOnce(habitRow)
+      .mockResolvedValueOnce({ ...habitRow, checkIns: [] })
+    prisma.habitCheckIn.findUnique.mockResolvedValue({ id: "c1", amount: 1 })
+
+    await checkInHabit("u1", "h1", { delta: -1 })
+
+    expect(prisma.habit.update).toHaveBeenCalledWith({
+      where: { id: "h1" },
+      data: { updatedAt: expect.any(Date) },
+    })
   })
 
   it("is a no-op write when decrementing a day that has no check-in", async () => {
